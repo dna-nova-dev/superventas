@@ -31,6 +31,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useEffect } from "react";
 import { useRolePermissions } from "@/hooks/useRolePermissions";
+import Comprar from "./pages/Comprar";
 
 const queryClient = new QueryClient();
 
@@ -137,6 +138,14 @@ const AppRoutes = () => {
         element={
           <ProtectedRoute>
             <Vender />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/comprar"
+        element={
+          <ProtectedRoute>
+            <Comprar />
           </ProtectedRoute>
         }
       />

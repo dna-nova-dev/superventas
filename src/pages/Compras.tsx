@@ -1,6 +1,7 @@
 import { Layout } from "@/components/layout/Layout";
 import { motion } from "framer-motion";
 import { Truck } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { formatCurrency } from "@/data/mockData";
 import { DataTable } from "@/components/ui/DataTable";
 import { useToast } from "@/hooks/use-toast";
@@ -52,6 +53,7 @@ const Compras = () => {
   const { toast } = useToast();
   const { empresaId } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [selectedCompraDetails, setSelectedCompraDetails] = useState<any>(null);
@@ -448,6 +450,10 @@ const Compras = () => {
     await printTicket(compra);
   };
 
+  const handleAddVenta = () => {
+    navigate("/comprar");
+  };
+
   const handleDeleteClick = useCallback((compra: Compra) => {
     setDeleteCompra(compra);
     setShowDeleteConfirm(true);
@@ -472,6 +478,109 @@ const Compras = () => {
             Administre las compras registradas en el sistema.
           </p>
         </motion.div>
+
+        {viewMode === "cards" && (
+          <motion.div variants={containerVariants}>
+            <motion.div
+              variants={itemVariants}
+              className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4"
+            >
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por código o fecha..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 h-9 w-full sm:w-[300px] rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    variant={dateFilter === "today" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() =>
+                      setDateFilter(dateFilter === "today" ? "all" : "today")
+                    }
+                    className="h-9"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    Hoy
+                  </Button>
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant={
+                          dateFilter === "custom" ? "default" : "outline"
+                        }
+                        size="sm"
+                        className="h-9"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateFilter === "custom" && dateRange.from ? (
+                          dateRange.to ? (
+                            <>
+                              {format(dateRange.from, "dd/MM/yyyy")} -{" "}
+                              {format(dateRange.to, "dd/MM/yyyy")}
+                            </>
+                          ) : (
+                            format(dateRange.from, "dd/MM/yyyy")
+                          )
+                        ) : (
+                          "Rango de fechas"
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        initialFocus
+                        mode="range"
+                        defaultMonth={dateRange.from}
+                        selected={dateRange}
+                        onSelect={(range) => {
+                          setDateRange(
+                            (range as DateRangeType) || {
+                              from: undefined,
+                              to: undefined,
+                            }
+                          );
+                          setDateFilter(range?.from ? "custom" : "all");
+                        }}
+                        locale={es}
+                        numberOfMonths={2}
+                      />
+                    </PopoverContent>
+                  </Popover>
+
+                  {(dateFilter === "today" || dateFilter === "custom") && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearDateFilter}
+                      className="h-9"
+                    >
+                      <X className="mr-2 h-4 w-4" />
+                      Limpiar
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {canEdit() && (
+                <button
+                  onClick={handleAddVenta}
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring h-9 px-4 py-2 bg-primary text-primary-foreground shadow hover:bg-primary/90 w-full sm:w-auto"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nueva Venta
+                </button>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
 
         {viewMode === "list" && (
           <motion.div variants={tableVariants} initial="hidden" animate="show">
