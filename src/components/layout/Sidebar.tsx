@@ -89,6 +89,13 @@ const navItems: NavItem[] = [
     roles: ["Administrador", "Encargado", "Cajero"],
   },
   {
+    title: "Proveedores",
+    path: "/proveedores",
+    icon: Users,
+    color: "text-purple-500",
+    roles: ["Administrador", "Encargado", "Cajero"],
+  },
+  {
     title: "Categorías",
     path: "/categorias",
     icon: Tag,

@@ -16,7 +16,7 @@ export const getAllProveedores = async (
     return await api.get<Proveedor[]>(url);
   } catch (error: any) {
     console.error(
-      "Error fetching clientes:",
+      "Error fetching proveedores:",
       error.response?.data || error.message
     );
     throw error;
@@ -42,7 +42,7 @@ export const createProveedor = async (
     return await api.post<Proveedor>(`${PROVEEDOR_BASE_URL}/create`, proveedor);
   } catch (error: any) {
     console.error(
-      "Error creating cliente:",
+      "Error creating proveedor:",
       error.response?.data || error.message
     );
     throw error;

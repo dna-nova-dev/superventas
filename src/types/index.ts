@@ -35,8 +35,11 @@ export interface Proveedor {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  tipoDocumento: string;
+  numeroDocumento: string;
   nombre: string;
-  nit: string;
+  departamento: string;
+  municipio: string;
   direccion: string;
   telefono: string;
   email: string;

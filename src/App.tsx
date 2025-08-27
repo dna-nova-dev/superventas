@@ -32,6 +32,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { useEffect } from "react";
 import { useRolePermissions } from "@/hooks/useRolePermissions";
 import Comprar from "./pages/Comprar";
+import Proveedores from "./pages/Proveedores";
 
 const queryClient = new QueryClient();
 
@@ -98,6 +99,14 @@ const AppRoutes = () => {
         element={
           <ProtectedRoute>
             <Clientes />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/proveedores"
+        element={
+          <ProtectedRoute>
+            <Proveedores />
           </ProtectedRoute>
         }
       />
