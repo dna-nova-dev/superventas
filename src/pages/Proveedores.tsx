@@ -68,14 +68,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  getAllClientes,
-  createCliente,
-  updateCliente,
-  deleteCliente,
-} from "@/services/clienteService";
-import {
   getAllProveedores,
   createProveedor,
+  updateProveedor,
+  deleteProveedor,
 } from "@/services/proveedorService";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
@@ -107,7 +103,7 @@ interface ProveedorFormData {
   departamento: string;
 }
 
-const ClienteCard = ({
+const ProveedorCard = ({
   proveedor,
   onEdit,
   onDelete,
@@ -212,7 +208,7 @@ const ClienteCard = ({
   </motion.div>
 );
 
-const AddClienteCard = ({ onAdd }: { onAdd: () => void }) => (
+const AddProveedorCard = ({ onAdd }: { onAdd: () => void }) => (
   <motion.div
     layout
     initial={{ opacity: 0, y: 50 }}
@@ -225,12 +221,12 @@ const AddClienteCard = ({ onAdd }: { onAdd: () => void }) => (
     <div className="p-3 rounded-full bg-primary/10 mb-3">
       <User className="h-6 w-6 text-primary" />
     </div>
-    <p className="font-medium">Agregar nuevo cliente</p>
+    <p className="font-medium">Agregar nuevo proveedor</p>
     <p className="text-sm text-muted-foreground">Clic para agregar</p>
   </motion.div>
 );
 
-const ClientForm = ({
+const ProveedorForm = ({
   formData,
   setFormData,
   handleSubmit,
@@ -379,8 +375,8 @@ const Proveedores = () => {
   const { toast } = useToast();
   const { getViewMode, canEdit, canDelete } = useRolePermissions();
   const { empresaId } = useAuth();
-  const canEditClientes = canEdit("clientes");
-  const canDeleteClientes = canDelete("clientes");
+  const canEditProveedores = canEdit("proveedores");
+  const canDeleteProveedores = canDelete("proveedores");
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -399,7 +395,7 @@ const Proveedores = () => {
     null
   );
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [clienteToDelete, setClienteToDelete] = useState<Proveedor | null>(
+  const [proveedorToDelete, setProveedorToDelete] = useState<Proveedor | null>(
     null
   );
   const [searchQuery, setSearchQuery] = useState("");
@@ -420,7 +416,7 @@ const Proveedores = () => {
     } catch (error) {
       toast({
         title: "Error",
-        description: "No se pudieron cargar los clientes",
+        description: "No se pudieron cargar los proveedores",
         variant: "destructive",
       });
     } finally {
@@ -468,33 +464,33 @@ const Proveedores = () => {
   };
 
   const handleDelete = (proveedor: Proveedor) => {
-    setClienteToDelete(proveedor);
+    setProveedorToDelete(proveedor);
     setShowDeleteDialog(true);
   };
 
   const handleConfirmDelete = async () => {
-    if (!clienteToDelete) return;
+    if (!proveedorToDelete) return;
 
     try {
-      await deleteCliente(clienteToDelete.id);
+      await deleteProveedor(proveedorToDelete.id);
       toast({
-        title: "Cliente eliminado",
-        description: "El cliente ha sido eliminado exitosamente",
+        title: "Proveedor eliminado",
+        description: "El proveedor ha sido eliminado exitosamente",
       });
       await loadProveedores();
     } catch (error) {
       toast({
         title: "Error",
-        description: "No se pudo eliminar el cliente",
+        description: "No se pudo eliminar el proveedor",
         variant: "destructive",
       });
     } finally {
       setShowDeleteDialog(false);
-      setClienteToDelete(null);
+      setProveedorToDelete(null);
     }
   };
 
-  const handleAddCliente = () => {
+  const handleAddProveedor = () => {
     resetForm();
     setShowModal(true);
   };
@@ -516,11 +512,14 @@ const Proveedores = () => {
 
       let success = false;
       if (isEditing && selectedProveedorId) {
-        const result = await updateCliente(selectedProveedorId, proveedorData);
+        const result = await updateProveedor(
+          selectedProveedorId,
+          proveedorData
+        );
         if (result) {
           toast({
-            title: "Cliente actualizado",
-            description: "El cliente se ha actualizado exitosamente",
+            title: "Proveedor actualizado",
+            description: "El proveedor se ha actualizado exitosamente",
           });
           success = true;
         }
@@ -528,8 +527,8 @@ const Proveedores = () => {
         const result = await createProveedor(proveedorData);
         if (result) {
           toast({
-            title: "Cliente creado",
-            description: "El cliente se ha registrado exitosamente",
+            title: "Proveedor creado",
+            description: "El proveedor se ha registrado exitosamente",
           });
           success = true;
         }
@@ -544,8 +543,8 @@ const Proveedores = () => {
       toast({
         title: "Error",
         description: isEditing
-          ? "No se pudo actualizar el cliente"
-          : "No se pudo crear el cliente",
+          ? "No se pudo actualizar el proveedor"
+          : "No se pudo crear el proveedor",
         variant: "destructive",
       });
     }
@@ -645,8 +644,8 @@ const Proveedores = () => {
               <AlertDialogTitle>¿Está seguro?</AlertDialogTitle>
               <AlertDialogDescription>
                 Esta acción no se puede deshacer. Se eliminará permanentemente
-                el cliente
-                {clienteToDelete && ` ${clienteToDelete.nombre}`}
+                el proveedor
+                {proveedorToDelete && ` ${proveedorToDelete.nombre}`}
                 {` y todos sus datos asociados.`}
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -675,8 +674,8 @@ const Proveedores = () => {
           </DrawerHeader>
           <div className="p-4">
             <p className="text-sm text-muted-foreground">
-              Se eliminará permanentemente el cliente
-              {clienteToDelete && ` ${clienteToDelete.nombre}`}
+              Se eliminará permanentemente el proveedor
+              {proveedorToDelete && ` ${proveedorToDelete.nombre}`}
               {` y todos sus datos asociados.`}
             </p>
           </div>
@@ -686,7 +685,7 @@ const Proveedores = () => {
               onClick={handleConfirmDelete}
               className="w-full"
             >
-              Eliminar cliente
+              Eliminar proveedor
             </Button>
             <DrawerClose asChild>
               <Button variant="outline" className="w-full">
@@ -733,15 +732,15 @@ const Proveedores = () => {
                 searchKeys={["nombre", "numeroDocumento"]}
                 searchPlaceholder="Buscar proveedor..."
                 actions={
-                  canEditClientes ? (
+                  canEditProveedores ? (
                     <DataTableActions
-                      onAdd={handleAddCliente}
+                      onAdd={handleAddProveedor}
                       addLabel="Nuevo Proveedor"
                     />
                   ) : null
                 }
-                onEdit={canEditClientes ? handleEdit : undefined}
-                onDelete={canDeleteClientes ? handleDelete : undefined}
+                onEdit={canEditProveedores ? handleEdit : undefined}
+                onDelete={canDeleteProveedores ? handleDelete : undefined}
                 className="transition-all hover:scale-[1.01]"
               />
             </motion.div>
@@ -764,16 +763,16 @@ const Proveedores = () => {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <input
                     type="text"
-                    placeholder="Buscar cliente..."
+                    placeholder="Buscar proveedor..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-9 h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
                 </div>
-                {canEditClientes && (
-                  <Button onClick={handleAddCliente} className="ml-4">
+                {canEditProveedores && (
+                  <Button onClick={handleAddProveedor} className="ml-4">
                     <Plus className="mr-2 h-4 w-4" />
-                    Nuevo Cliente
+                    Nuevo Proveedor
                   </Button>
                 )}
               </div>
@@ -801,14 +800,14 @@ const Proveedores = () => {
                         damping: 30,
                       }}
                     >
-                      <ClienteCard
+                      <ProveedorCard
                         proveedor={proveedor}
                         onEdit={handleEdit}
                         onDelete={handleDelete}
                       />
                     </motion.div>
                   ))}
-                  {canEditClientes && (
+                  {canEditProveedores && (
                     <motion.div
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
@@ -820,7 +819,7 @@ const Proveedores = () => {
                         damping: 30,
                       }}
                     >
-                      <AddClienteCard onAdd={handleAddCliente} />
+                      <AddProveedorCard onAdd={handleAddProveedor} />
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -846,17 +845,17 @@ const Proveedores = () => {
                 ) : (
                   <div className="flex items-center space-x-2">
                     <Plus className="h-5 w-5" />
-                    <span>Nuevo Cliente</span>
+                    <span>Nuevo Proveedor</span>
                   </div>
                 )}
               </DialogTitle>
               <DialogDescription>
                 {isEditing
                   ? "Modifique los datos del proveedor"
-                  : "Complete los datos del nuevo cliente"}
+                  : "Complete los datos del nuevo proveedor"}
               </DialogDescription>
             </DialogHeader>
-            <ClientForm
+            <ProveedorForm
               formData={formData}
               setFormData={setFormData}
               handleSubmit={handleSubmit}
@@ -877,22 +876,22 @@ const Proveedores = () => {
             <DrawerHeader className="text-left">
               <DrawerTitle>
                 {isEditing ? (
-                  "Editar Cliente"
+                  "Editar Proveedor"
                 ) : (
                   <div className="flex items-center space-x-2">
                     <Plus className="h-5 w-5" />
-                    <span>Nuevo Cliente</span>
+                    <span>Nuevo Proveedor</span>
                   </div>
                 )}
               </DrawerTitle>
               <DrawerDescription>
                 {isEditing
-                  ? "Modifique los datos del cliente"
-                  : "Complete los datos del nuevo cliente"}
+                  ? "Modifique los datos del proveedor"
+                  : "Complete los datos del nuevo proveedor"}
               </DrawerDescription>
             </DrawerHeader>
             <div className="px-4">
-              <ClientForm
+              <ProveedorForm
                 formData={formData}
                 setFormData={setFormData}
                 handleSubmit={handleSubmit}
@@ -902,7 +901,7 @@ const Proveedores = () => {
             </div>
             <DrawerFooter className="pt-2">
               <Button onClick={(e) => handleSubmit(e)} className="w-full">
-                {isEditing ? "Actualizar Cliente" : "Guardar Cliente"}
+                {isEditing ? "Actualizar Proveedor" : "Guardar Proveedor"}
               </Button>
               <DrawerClose asChild>
                 <Button variant="outline">Cancelar</Button>
