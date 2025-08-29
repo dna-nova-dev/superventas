@@ -450,7 +450,7 @@ const Compras = () => {
     await printTicket(compra);
   };
 
-  const handleAddVenta = () => {
+  const handleAddCompra = () => {
     navigate("/comprar");
   };
 
@@ -571,7 +571,7 @@ const Compras = () => {
 
               {canEdit() && (
                 <button
-                  onClick={handleAddVenta}
+                  onClick={handleAddCompra}
                   className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring h-9 px-4 py-2 bg-primary text-primary-foreground shadow hover:bg-primary/90 w-full sm:w-auto"
                 >
                   <Plus className="mr-2 h-4 w-4" />
@@ -733,6 +733,13 @@ const Compras = () => {
                       </PopoverContent>
                     </Popover>
                   </div>
+
+                  {canEdit() && (
+                    <Button onClick={handleAddCompra}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Nueva Compra
+                    </Button>
+                  )}
                 </div>
               }
               className="transition-all hover:scale-[1.01]"

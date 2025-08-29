@@ -19,11 +19,13 @@ import { getAllProductos } from "@/services/productoService";
 import { updateProducto } from "@/services/productoService";
 import { getAllCategorias } from "@/services/categoriaService";
 import { getAllClientes } from "@/services/clienteService";
+import { getAllProveedores } from "@/services/proveedorService";
 import { createVenta } from "@/services/ventaService";
 import { createVentaDetalle } from "@/services/ventaDetalleService";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatCurrency } from "@/data/mockData";
 import type { Producto, Categoria, Cliente, VentaDetalle } from "@/types";
+import type { Proveedor } from "@/types";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -76,7 +78,7 @@ export const CompraForm = () => {
 
   const [productos, setProductos] = useState<Producto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]); // Initialize with empty array
-  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [cajas, setCajas] = useState<any[]>([]);
   const [selectedCajaId, setSelectedCajaId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -97,16 +99,15 @@ export const CompraForm = () => {
     const loadData = async () => {
       try {
         setLoading(true);
-        const [productosData, categoriasData, clientesData] = await Promise.all(
-          [
+        const [productosData, categoriasData, proveedoresData] =
+          await Promise.all([
             getAllProductos(empresaId),
             getAllCategorias(empresaId),
-            getAllClientes(empresaId),
-          ]
-        );
+            getAllProveedores(empresaId),
+          ]);
         setProductos(productosData);
         setCategorias(categoriasData);
-        setClientes(clientesData);
+        setProveedores(proveedoresData);
       } catch (error) {
         toast({
           title: "Error",
@@ -504,9 +505,12 @@ export const CompraForm = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="no_cliente">Sin proveedor</SelectItem>
-                  {clientes.map((cliente) => (
-                    <SelectItem key={cliente.id} value={cliente.id.toString()}>
-                      {`${cliente.nombre} ${cliente.apellido || ""}`}
+                  {proveedores.map((proveedor) => (
+                    <SelectItem
+                      key={proveedor.id}
+                      value={proveedor.id.toString()}
+                    >
+                      {`${proveedor.nombre}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
