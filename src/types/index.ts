@@ -178,6 +178,8 @@ export interface Compra {
   fecha: string;
   hora: string;
   total: string;
+  pagado: string;
+  cambio: string;
   usuarioId: number;
   proveedorId: number;
   cajaId: number;
@@ -190,6 +192,8 @@ export interface CreateCompra {
   fecha: string;
   hora: string;
   total: string;
+  pagado: string;
+  cambio: string;
   usuarioId: number;
   proveedorId: number;
   cajaId: number;

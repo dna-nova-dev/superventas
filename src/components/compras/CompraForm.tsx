@@ -18,14 +18,12 @@ import { useToast } from "@/hooks/use-toast";
 import { getAllProductos } from "@/services/productoService";
 import { updateProducto } from "@/services/productoService";
 import { getAllCategorias } from "@/services/categoriaService";
-import { getAllClientes } from "@/services/clienteService";
 import { getAllProveedores } from "@/services/proveedorService";
-import { createVenta } from "@/services/ventaService";
-import { createVentaDetalle } from "@/services/ventaDetalleService";
+import { createCompra } from "@/services/compraService";
+import { createCompraDetalle } from "@/services/compraDetalleService";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatCurrency } from "@/data/mockData";
-import type { Producto, Categoria, Cliente, VentaDetalle } from "@/types";
-import type { Proveedor } from "@/types";
+import type { Producto, Categoria, Proveedor, CompraDetalle } from "@/types";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -54,19 +52,19 @@ type ProductoSeleccionado = {
   cantidad: number;
   precio: string;
 };
-interface VentaFormProps {
-  ventaId?: string;
+interface CompraFormProps {
+  compraId?: string;
 }
 
-type VentaEstado = "pendiente" | "vendido";
+type CompraEstado = "pendiente" | "comprado";
 
-type VentaPendiente = {
+type CompraPendiente = {
   id: string;
   productos: ProductoSeleccionado[];
-  cliente_id: number | null;
-  cliente_name: string;
+  proveedor_id: number | null;
+  proveedor_name: string;
   total: number;
-  estado: VentaEstado;
+  estado: CompraEstado;
   fecha: string;
 };
 
@@ -83,7 +81,9 @@ export const CompraForm = () => {
   const [selectedCajaId, setSelectedCajaId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategorias, setSelectedCategorias] = useState<number[]>([]);
-  const [selectedCliente, setSelectedCliente] = useState<number | null>(null);
+  const [selectedProveedor, setSelectedProveedor] = useState<number | null>(
+    null
+  );
   const [selectedName, setSelectedName] = useState<string>("");
   const [productosSeleccionados, setProductosSeleccionados] = useState<
     ProductoSeleccionado[]
@@ -91,8 +91,14 @@ export const CompraForm = () => {
   const [pago, setPago] = useState(0);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false); // State for category filter popover
-  const [ventaEstado, setVentaEstado] = useState<VentaEstado>("pendiente");
+  const [compraEstado, setCompraEstado] = useState<CompraEstado>("pendiente");
+  const [comprasPendientes, setComprasPendientes] = useState<CompraPendiente[]>(
+    []
+  );
   const [saleToDelete, setSaleToDelete] = useState<string | null>(null); // State for delete dialog
+  const [editingPendingSaleId, setEditingPendingSaleId] = useState<
+    string | null
+  >(null); // State for tracking edited sale
 
   // Cargar datos iniciales (productos, categorias, clientes)
   useEffect(() => {
@@ -139,6 +145,53 @@ export const CompraForm = () => {
     };
     fetchCajas();
   }, [empresaId, toast]);
+
+  // Cargar ventas pendientes desde localStorage y escuchar cambios
+  useEffect(() => {
+    const loadPendingSales = () => {
+      const pendientes = JSON.parse(
+        localStorage.getItem("comprasPendientes") || "[]"
+      ) as CompraPendiente[];
+      setComprasPendientes(pendientes);
+    };
+
+    loadPendingSales();
+    window.addEventListener("storage", loadPendingSales); // Listen for changes in other tabs/windows
+    return () => window.removeEventListener("storage", loadPendingSales);
+  }, []);
+
+  // Cargar venta pendiente desde URL al iniciar o cuando cambia la URL
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const compraId = params.get("pendiente");
+
+    if (compraId) {
+      const comprasGuardadas = JSON.parse(
+        localStorage.getItem("comprasPendientes") || "[]"
+      ) as CompraPendiente[];
+      const compraPendiente = comprasGuardadas.find((v) => v.id === compraId);
+      if (compraPendiente) {
+        setProductosSeleccionados(compraPendiente.productos);
+        setSelectedProveedor(compraPendiente.proveedor_id);
+        setSelectedName(compraPendiente.proveedor_name);
+        setCompraEstado(compraPendiente.estado);
+        setEditingPendingSaleId(compraId); // Track the loaded sale ID
+        setPago(compraPendiente.total); // Pre-fill payment
+      } else {
+        // If ID in URL doesn't match any pending sale, clear editing state
+        setEditingPendingSaleId(null);
+        navigate("/comprar", { replace: true }); // Optional: redirect to clean URL
+      }
+    } else {
+      // Clear editing state if no ID in URL
+      setEditingPendingSaleId(null);
+      // Optionally reset form fields when switching from edit to new
+      // setProductosSeleccionados([]);
+      // setSelectedCliente(null);
+      // setPago(0);
+    }
+    // Rerun effect if the search params change
+  }, [location.search, navigate]); // Added dependencies
 
   // Filtrar productos por búsqueda y categoría
   const filteredProductos = productos.filter((producto) => {
@@ -228,8 +281,93 @@ export const CompraForm = () => {
   // Calcular cambio
   const cambio = pago - total;
 
+  // Guardar o actualizar compra pendiente en localStorage
+  const guardarCompraPendiente = () => {
+    if (productosSeleccionados.length === 0) {
+      toast({
+        title: "Error",
+        description: "Agrega productos antes de guardar.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const comprasGuardadas = JSON.parse(
+      localStorage.getItem("comprasPendientes") || "[]"
+    ) as CompraPendiente[];
+    let comprasActualizadas: CompraPendiente[];
+    let mensajeToast = "";
+
+    if (editingPendingSaleId) {
+      // Update existing pending sale
+      comprasActualizadas = comprasGuardadas.map((compra) =>
+        compra.id === editingPendingSaleId
+          ? {
+              ...compra,
+              productos: productosSeleccionados,
+              proveedor_id: selectedProveedor,
+              total: total,
+              fecha: new Date().toISOString(), // Update timestamp
+            }
+          : compra
+      );
+      mensajeToast = "Compra pendiente actualizada";
+    } else {
+      // Create new pending sale
+      const nuevaCompraId = Date.now().toString();
+      const nuevaCompraPendiente: CompraPendiente = {
+        id: nuevaCompraId,
+        productos: productosSeleccionados,
+        proveedor_id: selectedProveedor,
+        proveedor_name: selectedName,
+        total: total,
+        estado: "pendiente",
+        fecha: new Date().toISOString(),
+      };
+      comprasActualizadas = [...comprasGuardadas, nuevaCompraPendiente];
+      mensajeToast = "Compra guardada como pendiente";
+      setEditingPendingSaleId(nuevaCompraId); // Start tracking the new sale ID
+      navigate(`/comprar?pendiente=${nuevaCompraId}`, { replace: true }); // Update URL
+    }
+
+    localStorage.setItem(
+      "comprasPendientes",
+      JSON.stringify(comprasActualizadas)
+    );
+    setComprasPendientes(comprasActualizadas); // Update state
+
+    toast({
+      title: "Éxito",
+      description: mensajeToast,
+    });
+  };
+
+  // Eliminar venta pendiente de localStorage y state
+  const eliminarCompraPendiente = (compraId: string) => {
+    const comprasGuardadas = JSON.parse(
+      localStorage.getItem("comprasPendientes") || "[]"
+    ) as CompraPendiente[];
+    const comprasActualizadas = comprasGuardadas.filter(
+      (v) => v.id !== compraId
+    );
+    localStorage.setItem(
+      "comprasPendientes",
+      JSON.stringify(comprasActualizadas)
+    );
+    setComprasPendientes(comprasActualizadas); // Update state directly
+
+    // If the deleted sale was the one being edited, clear the form and URL
+    if (editingPendingSaleId === compraId) {
+      setEditingPendingSaleId(null);
+      setProductosSeleccionados([]);
+      setSelectedProveedor(null);
+      setSelectedName(null);
+      setPago(0);
+      navigate("/comprar", { replace: true });
+    }
+  };
+
   // Guardar venta finalizada
-  const guardarVenta = async () => {
+  const guardarCompra = async () => {
     if (!currentUser?.id) {
       toast({
         title: "Error",
@@ -257,10 +395,10 @@ export const CompraForm = () => {
 
     setLoading(true);
     try {
-      // Crear venta en backend
-      const venta = await createVenta({
+      // Crear compra en backend
+      const compra = await createCompra({
         codigo: `V-${Date.now()}`,
-        clienteId: selectedCliente || null,
+        proveedorId: selectedProveedor || null,
         usuarioId: currentUser.id,
         cajaId: selectedCajaId || currentUser.cajaId || 1,
         empresaId: empresaId,
@@ -282,7 +420,7 @@ export const CompraForm = () => {
       // Crear detalles de venta y actualizar stock
       await Promise.all(
         productosSeleccionados.map(async (p) => {
-          await createVentaDetalle({
+          await createCompraDetalle({
             // Asegúrate que los campos coincidan con la interfaz VentaDetalle
             id: 0, // O el ID real si es necesario
             cantidad: p.cantidad,
@@ -293,10 +431,10 @@ export const CompraForm = () => {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             deletedAt: null,
-            ventaCodigo: venta.codigo,
+            compraCodigo: compra.codigo,
             productoId: p.producto.id,
             empresaId: empresaId,
-          } as VentaDetalle); // Cast a VentaDetalle
+          } as CompraDetalle); // Cast a VentaDetalle
           // Actualizar stock
           await updateProducto(p.producto.id, {
             stockTotal: (p.producto.stockTotal || 0) - p.cantidad,
@@ -304,25 +442,42 @@ export const CompraForm = () => {
         })
       );
 
+      // Si esta compra era pendiente, eliminarla de localStorage
+      if (editingPendingSaleId) {
+        eliminarCompraPendiente(editingPendingSaleId); // Reutiliza la función para limpiar localStorage y state
+      }
+
       toast({
-        title: "Venta registrada",
-        description: `Venta ${venta.codigo} registrada correctamente`,
+        title: "Compra registrada",
+        description: `Compra ${compra.codigo} registrada correctamente`,
       });
       // Reset form state after successful sale
       setProductosSeleccionados([]);
-      setSelectedCliente(null);
+      setSelectedProveedor(null);
       setPago(0);
-      navigate("/ventas"); // Navegar a la lista de ventas
+      navigate("/compras"); // Navegar a la lista de ventas
     } catch (error) {
-      console.error("Error al registrar la venta:", error); // Log detailed error
+      console.error("Error al registrar la compra:", error); // Log detailed error
       toast({
         title: "Error",
-        description: "No se pudo registrar la venta. Intenta de nuevo.",
+        description: "No se pudo registrar la compra. Intenta de nuevo.",
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
+  };
+
+  // Cargar compra pendiente seleccionada desde la Sheet
+  const cargarCompraPendiente = (compra: CompraPendiente) => {
+    setProductosSeleccionados(compra.productos);
+    setSelectedProveedor(compra.proveedor_id);
+    setSelectedName(compra.proveedor_name);
+    setCompraEstado("pendiente");
+    setPago(compra.total);
+    setEditingPendingSaleId(compra.id); // Track the loaded sale ID
+    navigate(`/comprar?pendiente=${compra.id}`, { replace: true }); // Update URL
+    // Consider closing the sheet here if needed, might require passing props
   };
 
   return (
@@ -331,7 +486,7 @@ export const CompraForm = () => {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold flex items-center">
           <Truck className="mr-2 h-6 w-6" />
-          Nueva Compra
+          {editingPendingSaleId ? "Editando Compra Pendiente" : "Nueva Compra"}
         </h1>
         <div className="flex gap-2">
           {/* Adjusted button for responsive text */}
@@ -339,6 +494,111 @@ export const CompraForm = () => {
             <ListOrdered className="h-4 w-4 md:mr-2" />
             <span className="hidden md:inline">Lista de Compras</span>
           </Button>
+          {/* Pending Sales Sheet Trigger */}
+          <Sheet>
+            <SheetTrigger asChild>
+              {/* Adjusted gap and added spans for responsive text/badge */}
+              <Button
+                variant="outline"
+                className="flex items-center gap-0 md:gap-2"
+              >
+                <Clock className="h-4 w-4" />
+                <span className="hidden md:inline">Compras Pendientes</span>
+                {comprasPendientes.length > 0 && (
+                  <span className="ml-1 rounded-full bg-primary w-5 h-5 hidden md:flex items-center justify-center text-xs text-primary-foreground">
+                    {comprasPendientes.length}
+                  </span>
+                )}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-[400px] sm:w-[540px]">
+              <SheetHeader>
+                <SheetTitle>Compras Pendientes</SheetTitle>
+              </SheetHeader>
+              <ScrollArea className="h-[calc(100vh-8rem)] mt-4">
+                <div className="space-y-4">
+                  {comprasPendientes.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-4">
+                      No hay compras pendientes
+                    </p>
+                  ) : (
+                    comprasPendientes.map((compra) => (
+                      <div
+                        key={compra.id}
+                        className="p-4 border rounded-lg hover:bg-accent relative"
+                      >
+                        {/* Delete Button */}
+                        <div className="absolute bottom-2 right-2 z-10">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-red-500 hover:bg-red-100 h-6 w-6 p-1"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSaleToDelete(compra.id);
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        {/* Clickable Area */}
+                        <div
+                          className="cursor-pointer"
+                          onClick={() => cargarCompraPendiente(compra)}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <p className="font-medium">
+                                {compra.productos.length} productos
+                              </p>
+                              <p className="font-medium">
+                                Proveedor: {compra.proveedor_name}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {new Date(compra.fecha).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <span className="font-bold">
+                              {formatCurrency(compra.total)}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            {compra.productos.slice(0, 3).map((item) => (
+                              <p
+                                key={item.producto.id}
+                                className="text-sm text-muted-foreground"
+                              >
+                                {item.cantidad}x {item.producto.nombre}
+                              </p>
+                            ))}
+                            {compra.productos.length > 3 && (
+                              <p className="text-sm text-muted-foreground">
+                                Y {compra.productos.length - 3} más...
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+              {/* Delete Confirmation Dialog Instance */}
+              <DeleteDialog
+                open={!!saleToDelete}
+                onOpenChange={(isOpen) => !isOpen && setSaleToDelete(null)}
+                onConfirm={() => {
+                  if (saleToDelete) {
+                    eliminarCompraPendiente(saleToDelete);
+                    setSaleToDelete(null);
+                    toast({ title: "Compra pendiente eliminada" });
+                  }
+                }}
+                title="Confirmar Eliminación"
+                description="¿Estás seguro de que deseas eliminar esta compra pendiente? Esta acción no se puede deshacer."
+              />
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
 
@@ -493,18 +753,18 @@ export const CompraForm = () => {
                 Proveedor
               </label>
               <Select
-                value={selectedCliente?.toString() ?? "no_cliente"}
+                value={selectedProveedor?.toString() ?? "no_proveedor"}
                 onValueChange={(value) =>
-                  setSelectedCliente(
-                    value === "no_cliente" ? null : Number(value)
+                  setSelectedProveedor(
+                    value === "no_proveedor" ? null : Number(value)
                   )
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar cliente" />
+                  <SelectValue placeholder="Seleccionar proveedor" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="no_cliente">Sin proveedor</SelectItem>
+                  <SelectItem value="no_proveedor">Sin proveedor</SelectItem>
                   {proveedores.map((proveedor) => (
                     <SelectItem
                       key={proveedor.id}
@@ -638,7 +898,17 @@ export const CompraForm = () => {
             <div className="flex gap-2 mt-4">
               <Button
                 className="flex-1"
-                onClick={guardarVenta}
+                variant="outline"
+                onClick={guardarCompraPendiente}
+                disabled={loading || productosSeleccionados.length === 0}
+              >
+                {editingPendingSaleId
+                  ? "Actualizar Pendiente"
+                  : "Guardar Pendiente"}
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={guardarCompra}
                 disabled={
                   loading || productosSeleccionados.length === 0 || pago < total
                 }
