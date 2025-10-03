@@ -6,6 +6,10 @@ cmds = ["pnpm install"]
 
 [phases.build]
 cmds = ["pnpm run build"]
+dependsOn = ["install"]
 
 [start]
 cmd = "pnpm run preview"
+
+[variables]
+NIXPACKS_NO_COPY = "true"
