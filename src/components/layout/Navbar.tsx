@@ -3,7 +3,7 @@ import { Menu, Sun, Moon, User, LogOut, SidebarClose } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useToast } from '@/components/ui/use-toast';

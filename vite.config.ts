@@ -11,8 +11,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    mode === 'development' &&
-    componentTagger(),
+    mode === 'development' && componentTagger(),
   ].filter(Boolean),
   resolve: {
     alias: {
@@ -21,5 +20,41 @@ export default defineConfig(({ mode }) => ({
   },
   preview: {
     allowedHosts: ["superventas2.tecnoinfo.info"],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Core libraries
+          vendor: [
+            'react', 
+            'react-dom', 
+            'react-router-dom',
+            '@tanstack/react-query'
+          ],
+          // UI libraries
+          ui: [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-dropdown-menu',
+            '@radix-ui/react-slot',
+            '@radix-ui/react-accordion',
+            '@radix-ui/react-alert-dialog',
+            '@radix-ui/react-aspect-ratio'
+          ],
+          // Form handling
+          forms: [
+            'react-hook-form',
+            '@hookform/resolvers', 
+            'zod'
+          ],
+          // Data visualization
+          charts: ['recharts']
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000, // Increase the warning limit to 1000 kB
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom'],
   },
 }));

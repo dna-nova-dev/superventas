@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { DataTable, DataTableActions } from '@/components/ui/DataTable';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { Users, User, MapPin, Phone, Mail, Search, Plus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { Cliente } from '@/types';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRolePermissions } from '@/hooks/useRolePermissions';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription, DrawerClose, DrawerFooter } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -21,19 +21,19 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from '@/hooks/use-mobile';
 
-const tableVariants = {
+const tableVariants: Variants = {
   hidden: {
     opacity: 0,
-    y: 20
+    y: 20,
   },
   show: {
     opacity: 1,
     y: 0,
     transition: {
       duration: 0.3,
-      ease: "easeOut"
-    }
-  }
+      ease: [0.4, 0, 0.2, 1],
+    },
+  },
 };
 
 interface ClienteFormData {
@@ -326,12 +326,7 @@ const Clientes = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const isMobile = useIsMobile();
-
-  useEffect(() => {
-    loadClientes();
-  }, []);
-
-  const loadClientes = async () => {
+  const loadClientes = useCallback(async () => {
     try {
       const data = await getAllClientes();
       const filtered = empresaId ? data.filter((c: Cliente) => c.empresaId === empresaId) : data;
@@ -345,7 +340,13 @@ const Clientes = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [empresaId, toast]);
+
+  useEffect(() => {
+    loadClientes();
+  }, [loadClientes]);
+
+  
 
   const resetForm = () => {
     setFormData({

@@ -21,9 +21,10 @@ import {
   Moon,
   SidebarClose,
   Truck,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { getImageSrc } from "@/utils/imageUtils";
 import { useRolePermissions } from "@/hooks/useRolePermissions";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -42,7 +43,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { motion } from "framer-motion";
+import { motion, type Variants } from "framer-motion";
+type UserRole = "Administrador" | "Encargado" | "Cajero" | "Owner";
 import logo from "/logo.svg";
 
 type NavItem = {
@@ -117,6 +119,13 @@ const navItems: NavItem[] = [
     roles: ["Administrador", "Encargado", "Cajero"],
   },
   {
+    title: "Ventas Pendientes",
+    path: "/ventas-pendientes",
+    icon: Clock,
+    color: "text-amber-500",
+    roles: ["Administrador", "Encargado", "Cajero"],
+  },
+  {
     title: "Compras",
     path: "/compras",
     icon: Truck,
@@ -154,7 +163,7 @@ const ventaButton: NavItem = {
   roles: ["Administrador", "Encargado", "Cajero"],
 };
 
-const containerVariants = {
+const containerVariants: Variants = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
@@ -164,13 +173,13 @@ const containerVariants = {
   },
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { opacity: 0, x: -20 },
   show: {
     opacity: 1,
     x: 0,
     transition: {
-      ease: "easeOut",
+      ease: "easeOut" as const,
     },
   },
 };
@@ -208,7 +217,7 @@ export const Sidebar = ({
   };
   const filteredNavItems = navItems.filter((item) => {
     if (!item.roles) return true;
-    return item.roles.includes(userRole as any) && canAccessPage(item.title);
+    return item.roles.includes(userRole as UserRole) && canAccessPage(item.title);
   });
   return (
     <div

@@ -1,9 +1,11 @@
-import React, { useReducer, useEffect, useMemo } from "react";
+import React, { useReducer, useEffect, useMemo, useCallback, useState } from "react";
 import { Layout } from "@/components/layout/Layout";
 import FilterCuadre from "@/components/dashboard/FilterCuadre";
 import FilterEstadisticas from "@/components/dashboard/FilterEstadisticas";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/data/mockData";
+
+// Import types from the types file
 import {
   BarChart3,
   ShoppingCart,
@@ -41,21 +43,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { motion } from "framer-motion";
+import type { Variants } from "framer-motion";
 import { getVentas } from "@/services/ventaService";
 import { getAllProductos } from "@/services/productoService";
 import { getAllClientes } from "@/services/clienteService";
 import { getAllCajas } from "@/services/cajaService";
 import { getVentaDetalles } from "@/services/ventaDetalleService";
 import { getGastos } from "@/services/gastosService";
-import {
-  Venta,
-  Producto,
-  Cliente,
-  Categoria,
-  VentaDetalle,
-  Gasto,
+import { 
+  Venta as VentaType, 
+  Producto as ProductoType, 
+  Cliente as ClienteType, 
+  Categoria, 
+  VentaDetalle, 
+  Gasto as GastoType 
 } from "@/types";
-import { Caja } from "@/types/caja.interface";
+import { Caja as CajaType } from "@/types/caja.interface";
+
+// Local type definitions that match the expected structure
+type Venta = VentaType & { empresaId: string };
+type Producto = ProductoType & { empresaId: string };
+type Cliente = ClienteType & { empresaId: string };
+type Caja = CajaType & { empresaId: string, montoInicial: string };
+type Gasto = GastoType;
 import { getAllCategorias } from "@/services/categoriaService";
 import { WidgetGrid } from "@/components/dashboard/WidgetGrid";
 import { StatCard } from "@/components/dashboard/StatCard";
@@ -64,7 +74,7 @@ import { CustomTooltip } from "@/components/dashboard/CustomTooltip";
 import { Button } from "@/components/ui/button";
 import { SlidersHorizontal, RefreshCw } from "lucide-react";
 
-const containerVariants = {
+const containerVariants: Variants = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
@@ -74,12 +84,20 @@ const containerVariants = {
   },
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0 },
+  show: { 
+    opacity: 1, 
+    y: 0,
+    transition: {
+      type: 'spring',
+      stiffness: 100,
+      damping: 10
+    }
+  },
 };
 
-const chartVariants = {
+const chartVariants: Variants = {
   hidden: {
     opacity: 0,
     scale: 0.95,
@@ -96,15 +114,25 @@ const chartVariants = {
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"];
 
+// Función para obtener la fecha de inicio y fin del día actual
+const getTodayRange = () => {
+  const today = new Date();
+  const start = new Date(today);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(today);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+};
+
 // Estado inicial agrupado
 const initialState = {
   selectedCajaId: "1",
   periodFilter: "hoy",
-  startDate: null,
-  endDate: null,
+  startDate: getTodayRange().start,
+  endDate: getTodayRange().end,
   periodoEstadisticas: "hoy",
-  startEstadisticas: null,
-  endEstadisticas: null,
+  startEstadisticas: getTodayRange().start,
+  endEstadisticas: getTodayRange().end,
   selectedEstadisticasCajaId: "",
   ventas: [],
   productos: [],
@@ -170,12 +198,12 @@ const Dashboard = () => {
     startEstadisticas,
     endEstadisticas,
     selectedEstadisticasCajaId,
-    ventas,
-    productos,
-    clientes,
-    cajas,
-    ventaDetalles,
-    gastos,
+    ventas = [],
+    productos = [],
+    clientes = [],
+    cajas = [],
+    ventaDetalles = [],
+    gastos = [],
     salesPeriod,
     categoryPeriod,
     trendPeriod,
@@ -185,55 +213,229 @@ const Dashboard = () => {
     trendData,
     widgetPopoverOpen,
     dashboardWidgets,
-    categorias,
+    categorias = [],
     filteredStats,
   } = state;
 
-  useEffect(() => {
-    const loadInitialData = async () => {
+  // Memoized filtered data - defined at the top to ensure they're available for all hooks
+  const filteredGastos = useMemo<Array<Gasto>>(
+    () => {
       try {
-        dispatch({ type: "SET_FIELD", field: "loading", value: true });
-        const [
-          ventasData,
-          productosData,
-          clientesData,
-          cajasData,
-          detallesData,
-          gastosData,
-        ] = await Promise.all([
-          getVentas(),
-          getAllProductos(),
-          getAllClientes(),
-          getAllCajas(),
-          getVentaDetalles(),
-          getGastos(),
-        ]);
-
-        dispatch({
-          type: "SET_MULTIPLE",
-          payload: {
-            ventas: ventasData.filter((v: any) => v.empresaId === empresaId),
-            productos: productosData.filter(
-              (p: any) => p.empresaId === empresaId
-            ),
-            clientes: clientesData.filter(
-              (c: any) => c.empresaId === empresaId
-            ),
-            cajas: cajasData.filter(
-              (caja: any) => caja.empresaId === empresaId
-            ),
-            ventaDetalles: detallesData,
-            gastos: gastosData,
-          },
+        if (!gastos || !Array.isArray(gastos)) {
+          console.warn("Datos de gastos no válidos:", gastos);
+          return [];
+        }
+        
+        console.log("Filtrando gastos con:", {
+          totalGastos: gastos.length,
+          periodoEstadisticas,
+          startEstadisticas,
+          endEstadisticas,
         });
+        
+        // Si no hay gastos, devolver array vacío
+        if (gastos.length === 0) {
+          console.log("No hay gastos para filtrar");
+          return [];
+        }
+        
+        const result = filtrarGastos(
+          gastos,
+          periodoEstadisticas,
+          startEstadisticas,
+          endEstadisticas
+        );
+        
+        console.log("Gastos filtrados:", {
+          total: result.length,
+          muestra: result.slice(0, 3)
+        });
+        
+        return result;
       } catch (error) {
-        console.error("Error loading dashboard data:", error);
-      } finally {
-        dispatch({ type: "SET_FIELD", field: "loading", value: false });
+        console.error("Error al filtrar gastos:", error);
+        return [];
       }
-    };
-    loadInitialData();
+    },
+    [gastos, periodoEstadisticas, startEstadisticas, endEstadisticas]
+  );
+  
+  // Estado para controlar si se deben mostrar los gastos
+  const [showEmptyGastos, setShowEmptyGastos] = useState(false);
+
+  const filteredVentas = useMemo<Array<Venta>>(() => {
+    console.log('=== FILTRANDO VENTAS ===');
+    console.log('Total ventas:', ventas.length);
+    console.log('Periodo:', periodoEstadisticas);
+    console.log('Rango:', { start: startEstadisticas, end: endEstadisticas });
+    
+    const filtradas = filtrarVentas(
+      ventas,
+      periodoEstadisticas,
+      startEstadisticas,
+      endEstadisticas
+    ) as Array<Venta>;
+    
+    console.log('Ventas filtradas:', filtradas.length);
+    if (filtradas.length === 0 && ventas.length > 0) {
+      console.warn('No se encontraron ventas con el filtro actual');
+      console.log('Primeras 3 ventas (sin filtrar):', ventas.slice(0, 3));
+    }
+    
+    return filtradas;
+  }, [ventas, periodoEstadisticas, startEstadisticas, endEstadisticas]);
+
+  const filteredProductos = useMemo<Array<Producto>>(() => {
+    console.log('=== FILTRANDO PRODUCTOS ===');
+    console.log('Total productos:', productos.length);
+    
+    const filtrados = filtrarProductos(
+      productos,
+      periodoEstadisticas,
+      startEstadisticas,
+      endEstadisticas
+    ) as Array<Producto>;
+    
+    console.log('Productos filtrados:', filtrados.length);
+    return filtrados;
+  }, [productos, periodoEstadisticas, startEstadisticas, endEstadisticas]);
+
+  const filteredClientes = useMemo<Array<Cliente>>(() => {
+    console.log('=== FILTRANDO CLIENTES ===');
+    console.log('Total clientes:', clientes.length);
+    
+    const filtrados = filtrarClientes(
+      clientes,
+      periodoEstadisticas,
+      startEstadisticas,
+      endEstadisticas
+    ) as Array<Cliente>;
+    
+    console.log('Clientes filtrados:', filtrados.length);
+    return filtrados;
+  }, [clientes, periodoEstadisticas, startEstadisticas, endEstadisticas]);
+
+  // Función para cargar datos iniciales
+  const loadInitialData = useCallback(async () => {
+    try {
+      dispatch({ type: "SET_FIELD", field: "loading", value: true });
+      
+      console.log("Cargando datos iniciales...");
+      console.log("Empresa ID:", empresaId);
+      
+      // Primero cargamos los gastos para verificar si hay datos
+      const gastosData = await getGastos().catch(err => {
+        console.error("Error cargando gastos:", err);
+        return [];
+      });
+      
+      console.log("Datos de gastos cargados:", gastosData);
+      
+      // Luego cargamos el resto de los datos en paralelo
+      const [
+        ventasData,
+        productosData,
+        clientesData,
+        cajasData,
+        detallesData,
+      ] = await Promise.all([
+        getVentas().catch(err => {
+          console.error("Error cargando ventas:", err);
+          return [];
+        }),
+        getAllProductos().catch(err => {
+          console.error("Error cargando productos:", err);
+          return [];
+        }),
+        getAllClientes().catch(err => {
+          console.error("Error cargando clientes:", err);
+          return [];
+        }),
+        getAllCajas().catch(err => {
+          console.error("Error cargando cajas:", err);
+          return [];
+        }),
+        getVentaDetalles().catch(err => {
+          console.error("Error cargando detalles de venta:", err);
+          return [];
+        }),
+      ]);
+
+      console.log("Datos cargados:", {
+        ventas: ventasData.length,
+        productos: productosData.length,
+        clientes: clientesData.length,
+        cajas: cajasData.length,
+        detalles: detallesData.length,
+        gastos: gastosData.length,
+      });
+
+      // Verificar si hay gastos para la empresa actual
+      const gastosFiltrados = Array.isArray(gastosData) 
+        ? gastosData.filter((g: Gasto) => g.empresaId === empresaId)
+        : [];
+      
+      console.log(`Gastos filtrados para empresa ${empresaId}:`, gastosFiltrados);
+      
+      dispatch({
+        type: "SET_MULTIPLE",
+        payload: {
+          ventas: Array.isArray(ventasData) ? ventasData.filter((v: Venta) => v.empresaId === empresaId) : [],
+          productos: Array.isArray(productosData) ? productosData.filter(
+            (p: Producto) => p.empresaId === empresaId
+          ) : [],
+          clientes: Array.isArray(clientesData) ? clientesData.filter(
+            (c: Cliente) => c.empresaId === empresaId
+          ) : [],
+          cajas: Array.isArray(cajasData) ? cajasData.filter(
+            (caja: Caja) => caja.empresaId === empresaId
+          ) : [],
+          ventaDetalles: Array.isArray(detallesData) ? detallesData : [],
+          gastos: gastosFiltrados,
+        },
+      });
+      
+      // Si no hay gastos, mostrar un mensaje informativo
+      if (gastosFiltrados.length === 0) {
+        console.warn("No se encontraron gastos para la empresa", empresaId);
+      }
+    } catch (error) {
+      console.error("Error loading dashboard data:", error);
+    } finally {
+      dispatch({ type: "SET_FIELD", field: "loading", value: false });
+    }
   }, [empresaId]);
+
+  // Efecto para cargar datos al montar el componente
+  useEffect(() => {
+    loadInitialData();
+    
+    // Configurar un intervalo para actualizar los datos cada minuto
+    const intervalId = setInterval(() => {
+      console.log("Actualizando datos del dashboard...");
+      loadInitialData();
+    }, 60000);
+    
+    // Limpiar el intervalo al desmontar el componente
+    return () => clearInterval(intervalId);
+  }, [loadInitialData]);
+  
+  // Debug: Mostrar datos cargados
+  useEffect(() => {
+    console.log('=== DATOS CARGADOS ===');
+    console.log('Ventas:', ventas.length);
+    console.log('Productos:', productos.length);
+    console.log('Clientes:', clientes.length);
+    console.log('Cajas:', cajas.length);
+    console.log('Gastos:', gastos.length);
+    console.log('Empresa ID:', empresaId);
+    console.log('Filtro actual:', periodoEstadisticas);
+    console.log('Fechas:', { startEstadisticas, endEstadisticas });
+    console.log('Ventas filtradas:', filteredVentas.length);
+    console.log('Productos filtrados:', filteredProductos.length);
+    console.log('Clientes filtrados:', filteredClientes.length);
+    console.log('========================');
+  }, [ventas, productos, clientes, cajas, gastos, filteredVentas, filteredProductos, filteredClientes, empresaId, periodoEstadisticas, startEstadisticas, endEstadisticas]);
 
   useEffect(() => {
     const fetchCategorias = async () => {
@@ -248,12 +450,72 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => {
+    const calculateStats = () => {
+      const totalVentas = filteredVentas.reduce(
+        (acc, venta) => acc + parseFloat(venta.total),
+        0
+      );
+      const lastMonthVentas = filteredVentas
+        .filter((venta) => {
+          const ventaDate = new Date(venta.fecha);
+          const lastMonth = new Date();
+          lastMonth.setMonth(lastMonth.getMonth() - 1);
+          return ventaDate.getMonth() === lastMonth.getMonth();
+        })
+        .reduce((acc, venta) => acc + parseFloat(venta.total), 0);
+
+      const currentMonthVentas = filteredVentas
+        .filter((venta) => {
+          const ventaDate = new Date(venta.fecha);
+          const now = new Date();
+          return ventaDate.getMonth() === now.getMonth();
+        })
+        .reduce((acc, venta) => acc + parseFloat(venta.total), 0);
+
+      const ventasTrend =
+        lastMonthVentas === 0
+          ? "0"
+          : (
+              ((currentMonthVentas - lastMonthVentas) / lastMonthVentas) *
+              100
+            ).toFixed(1);
+
+      const productsLast7Days = filteredProductos.filter((producto) => {
+        const productDate = new Date(producto.createdAt);
+        const today = new Date();
+        const diffTime = Math.abs(today.getTime() - productDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays <= 7;
+      });
+
+      const newClientsLastMonth = filteredClientes.filter((cliente) => {
+        const clientDate = new Date(cliente.createdAt);
+        const lastMonth = new Date();
+        lastMonth.setMonth(lastMonth.getMonth() - 1);
+        return clientDate > lastMonth;
+      });
+
+      const totalGastos = gastos.reduce(
+        (acc, gasto) => acc + parseFloat(gasto.monto),
+        0
+      );
+
+      return {
+        totalVentas,
+        ventasTrend,
+        totalProductos: filteredProductos.length,
+        newProducts: productsLast7Days.length,
+        totalClientes: filteredClientes.length,
+        newClients: newClientsLastMonth.length,
+        totalGastos,
+      };
+    };
+
     dispatch({ type: "SET_FILTERED_STATS", payload: calculateStats() });
   }, [
-    ventas,
-    productos,
-    clientes,
-    cajas,
+    filteredVentas,
+    filteredProductos,
+    filteredClientes,
     gastos,
     periodoEstadisticas,
     startEstadisticas,
@@ -373,36 +635,7 @@ const Dashboard = () => {
     dispatch({ type: "SET_FIELD", field: "trendData", value: data });
   };
 
-  const filteredVentas = useMemo(
-    () =>
-      filtrarVentas(
-        ventas,
-        periodoEstadisticas,
-        startEstadisticas,
-        endEstadisticas
-      ),
-    [ventas, periodoEstadisticas, startEstadisticas, endEstadisticas]
-  );
-  const filteredProductos = useMemo(
-    () =>
-      filtrarProductos(
-        productos,
-        periodoEstadisticas,
-        startEstadisticas,
-        endEstadisticas
-      ),
-    [productos, periodoEstadisticas, startEstadisticas, endEstadisticas]
-  );
-  const filteredClientes = useMemo(
-    () =>
-      filtrarClientes(
-        clientes,
-        periodoEstadisticas,
-        startEstadisticas,
-        endEstadisticas
-      ),
-    [clientes, periodoEstadisticas, startEstadisticas, endEstadisticas]
-  );
+  
 
   const calculateStats = () => {
     const totalVentas = filteredVentas.reduce(
@@ -466,7 +699,7 @@ const Dashboard = () => {
     }
 
     // --- GASTOS ---
-    let gastosFiltrados = filtrarGastos(
+    const gastosFiltrados = filtrarGastos(
       gastos,
       periodoEstadisticas,
       startEstadisticas,
@@ -614,7 +847,7 @@ const Dashboard = () => {
       activeCajasTrend = `${activeCajas} de ${cajasFiltradas.length} operativas`;
     }
 
-    let gastosFiltrados = filtrarGastos(
+    const gastosFiltrados = filtrarGastos(
       gastos,
       periodoEstadisticas,
       startEstadisticas,
@@ -718,6 +951,10 @@ const Dashboard = () => {
     clientes,
     cajas,
     selectedEstadisticasCajaId,
+    filteredVentas,
+    filteredProductos,
+    filteredClientes,
+    gastos
   ]);
 
   useEffect(() => {
@@ -1318,179 +1555,387 @@ const Dashboard = () => {
   );
 };
 
+// Función para formatear fechas a YYYY-MM-DD para comparación
+const formatDateToYMD = (date: Date) => {
+  const d = new Date(date);
+  return d.toISOString().split('T')[0];
+};
+
 // Función utilitaria para filtrar ventas
 function filtrarVentas(ventas, periodo, start, end) {
-  if (periodo === "hoy") {
-    const desde = new Date();
-    desde.setHours(0, 0, 0, 0);
-    const hasta = new Date();
-    hasta.setHours(23, 59, 59, 999);
-    return ventas.filter((v) => {
-      const fecha = new Date(v.fecha);
-      return fecha >= desde && fecha <= hasta;
-    });
-  } else if (periodo === "ayer") {
-    const ayer = new Date();
-    ayer.setDate(ayer.getDate() - 1);
-    ayer.setHours(0, 0, 0, 0);
-    const finAyer = new Date();
-    finAyer.setDate(finAyer.getDate() - 1);
-    finAyer.setHours(23, 59, 59, 999);
-    return ventas.filter((v) => {
-      const fecha = new Date(v.fecha);
-      return fecha >= ayer && fecha <= finAyer;
-    });
-  } else if (periodo === "7dias") {
-    const hasta = new Date();
-    hasta.setHours(23, 59, 59, 999);
-    const desde = new Date();
-    desde.setDate(hasta.getDate() - 6);
-    desde.setHours(0, 0, 0, 0);
-    return ventas.filter((v) => {
-      const fecha = new Date(v.fecha);
-      return fecha >= desde && fecha <= hasta;
-    });
-  } else if (periodo === "1mes") {
-    const hasta = new Date();
-    hasta.setHours(23, 59, 59, 999);
-    const desde = new Date();
-    desde.setMonth(hasta.getMonth() - 1);
-    desde.setHours(0, 0, 0, 0);
-    return ventas.filter((v) => {
-      const fecha = new Date(v.fecha);
-      return fecha >= desde && fecha <= hasta;
-    });
-  } else if (periodo === "rango" && start && end) {
-    const desde = new Date(start);
-    desde.setHours(0, 0, 0, 0);
-    const hasta = new Date(end);
-    hasta.setHours(23, 59, 59, 999);
-    return ventas.filter((v) => {
-      const fecha = new Date(v.fecha);
-      return fecha >= desde && fecha <= hasta;
-    });
+  console.log(`Filtrando ${ventas?.length || 0} ventas con periodo:`, periodo);
+  
+  // Si no hay ventas, retornar array vacío
+  if (!ventas || ventas.length === 0) {
+    console.warn('No hay ventas para filtrar');
+    return [];
   }
-  return ventas;
+
+  try {
+    // Mostrar las primeras 3 ventas para depuración
+    console.log('Primeras 3 ventas (sin filtrar):', ventas.slice(0, 3).map(v => ({
+      id: v.id,
+      fecha: v.fecha,
+      total: v.total,
+      empresaId: v.empresaId
+    })));
+
+    // Si no hay periodo definido, devolver todas las ventas
+    if (!periodo) {
+      console.log('Sin filtro de fecha para ventas - mostrando todas');
+      return ventas;
+    }
+
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    
+    let desde, hasta;
+
+    switch (periodo) {
+      case 'hoy':
+        desde = new Date(hoy);
+        hasta = new Date(hoy);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case 'ayer':
+        desde = new Date(hoy);
+        desde.setDate(desde.getDate() - 1);
+        hasta = new Date(desde);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case '7dias':
+        desde = new Date(hoy);
+        desde.setDate(desde.getDate() - 6);
+        hasta = new Date(hoy);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case '1mes':
+        desde = new Date(hoy);
+        desde.setMonth(desde.getMonth() - 1);
+        hasta = new Date(hoy);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case 'rango':
+        if (!start || !end) {
+          console.warn('Rango de fechas incompleto', { start, end });
+          return ventas;
+        }
+        desde = new Date(start);
+        desde.setHours(0, 0, 0, 0);
+        hasta = new Date(end);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      default:
+        console.warn('Período no reconocido, mostrando todas las ventas');
+        return ventas;
+    }
+
+    console.log(`Filtrando ventas entre ${desde} y ${hasta}`);
+    
+    const ventasFiltradas = ventas.filter((v) => {
+      if (!v.fecha) {
+        console.warn('Venta sin fecha:', v.id);
+        return false;
+      }
+      
+      let fechaVenta;
+      try {
+        // Intentar parsear la fecha de diferentes formatos
+        fechaVenta = new Date(v.fecha);
+        if (isNaN(fechaVenta.getTime())) {
+          console.warn('Fecha inválida en venta:', v.id, v.fecha);
+          return false;
+        }
+      } catch (error) {
+        console.warn('Error al parsear fecha en venta:', v.id, error);
+        return false;
+      }
+      
+      const esValida = fechaVenta >= desde && fechaVenta <= hasta;
+      
+      if (!esValida) {
+        console.log(`Venta ${v.id} fuera de rango:`, {
+          fechaVenta,
+          desde,
+          hasta,
+          periodo,
+          fechaOriginal: v.fecha
+        });
+      }
+      
+      return esValida;
+    });
+
+    console.log(`Ventas filtradas: ${ventasFiltradas.length} de ${ventas.length}`);
+    
+    // Si no hay ventas en el rango, mostrar las últimas 5 como referencia
+    if (ventasFiltradas.length === 0 && ventas.length > 0) {
+      console.warn('No se encontraron ventas en el rango especificado. Últimas 5 ventas:', 
+        ventas.slice(0, 5).map(v => ({
+          id: v.id,
+          fecha: v.fecha,
+          total: v.total,
+          empresaId: v.empresaId
+        }))
+      );
+    }
+    
+    return ventasFiltradas;
+  } catch (error) {
+    console.error('Error al filtrar ventas:', error);
+    // En caso de error, devolver las ventas sin filtrar para no romper la UI
+    return ventas;
+  }
 }
 
 // Función utilitaria para filtrar productos por fecha de creación
 function filtrarProductos(productos, periodo, start, end) {
-  if (periodo === "hoy") {
-    const desde = new Date();
-    desde.setHours(0, 0, 0, 0);
-    const hasta = new Date();
-    hasta.setHours(23, 59, 59, 999);
-    return productos.filter((p) => {
-      if (!p.createdAt) return false;
-      const fecha = new Date(p.createdAt);
-      return fecha >= desde && fecha <= hasta;
-    });
-  } else if (periodo === "ayer") {
-    const ayer = new Date();
-    ayer.setDate(ayer.getDate() - 1);
-    ayer.setHours(0, 0, 0, 0);
-    const finAyer = new Date();
-    finAyer.setDate(finAyer.getDate() - 1);
-    finAyer.setHours(23, 59, 59, 999);
-    return productos.filter((p) => {
-      if (!p.createdAt) return false;
-      const fecha = new Date(p.createdAt);
-      return fecha >= ayer && fecha <= finAyer;
-    });
-  } else if (periodo === "7dias") {
-    const hasta = new Date();
-    hasta.setHours(23, 59, 59, 999);
-    const desde = new Date();
-    desde.setDate(hasta.getDate() - 6);
-    desde.setHours(0, 0, 0, 0);
-    return productos.filter((p) => {
-      if (!p.createdAt) return false;
-      const fecha = new Date(p.createdAt);
-      return fecha >= desde && fecha <= hasta;
-    });
-  } else if (periodo === "1mes") {
-    const hasta = new Date();
-    hasta.setHours(23, 59, 59, 999);
-    const desde = new Date();
-    desde.setMonth(hasta.getMonth() - 1);
-    desde.setHours(0, 0, 0, 0);
-    return productos.filter((p) => {
-      if (!p.createdAt) return false;
-      const fecha = new Date(p.createdAt);
-      return fecha >= desde && fecha <= hasta;
-    });
-  } else if (periodo === "rango" && start && end) {
-    const desde = new Date(start);
-    desde.setHours(0, 0, 0, 0);
-    const hasta = new Date(end);
-    hasta.setHours(23, 59, 59, 999);
-    return productos.filter((p) => {
-      if (!p.createdAt) return false;
-      const fecha = new Date(p.createdAt);
-      return fecha >= desde && fecha <= hasta;
-    });
+  console.log(`Filtrando ${productos?.length || 0} productos con periodo:`, periodo);
+  
+  if (!productos || productos.length === 0) {
+    console.warn('No hay productos para filtrar');
+    return [];
   }
-  return productos;
+
+  try {
+    // Mostrar los primeros 3 productos para depuración
+    console.log('Primeros 3 productos (sin filtrar):', productos.slice(0, 3).map(p => ({
+      id: p.id,
+      nombre: p.nombre,
+      createdAt: p.createdAt,
+      empresaId: p.empresaId
+    })));
+
+    // Si no hay periodo definido, devolver todos los productos
+    if (!periodo) {
+      console.log('Sin filtro de fecha para productos - mostrando todos');
+      return productos;
+    }
+
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    
+    let desde, hasta;
+
+    switch (periodo) {
+      case 'hoy':
+        desde = new Date(hoy);
+        hasta = new Date(hoy);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case 'ayer':
+        desde = new Date(hoy);
+        desde.setDate(desde.getDate() - 1);
+        hasta = new Date(desde);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case '7dias':
+        desde = new Date(hoy);
+        desde.setDate(desde.getDate() - 6);
+        hasta = new Date(hoy);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case '1mes':
+        desde = new Date(hoy);
+        desde.setMonth(desde.getMonth() - 1);
+        hasta = new Date(hoy);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case 'rango':
+        if (!start || !end) {
+          console.warn('Rango de fechas incompleto', { start, end });
+          return productos;
+        }
+        desde = new Date(start);
+        desde.setHours(0, 0, 0, 0);
+        hasta = new Date(end);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      default:
+        console.warn('Período no reconocido, mostrando todos los productos');
+        return productos;
+    }
+
+    console.log(`Filtrando productos entre ${desde} y ${hasta}`);
+    
+    const productosFiltrados = productos.filter((p) => {
+      if (!p.createdAt) {
+        console.warn('Producto sin fecha de creación:', p.id);
+        return false;
+      }
+      
+      let fechaCreacion;
+      try {
+        fechaCreacion = new Date(p.createdAt);
+        if (isNaN(fechaCreacion.getTime())) {
+          console.warn('Fecha de creación inválida en producto:', p.id, p.createdAt);
+          return false;
+        }
+      } catch (error) {
+        console.warn('Error al parsear fecha en producto:', p.id, error);
+        return false;
+      }
+      
+      const esValido = fechaCreacion >= desde && fechaCreacion <= hasta;
+      
+      if (!esValido) {
+        console.log(`Producto ${p.id} fuera de rango:`, {
+          fechaCreacion,
+          desde,
+          hasta,
+          periodo,
+          fechaOriginal: p.createdAt
+        });
+      }
+      
+      return esValido;
+    });
+
+    console.log(`Productos filtrados: ${productosFiltrados.length} de ${productos.length}`);
+    
+    // Si no hay productos en el rango, mostrar los últimos 5 como referencia
+    if (productosFiltrados.length === 0 && productos.length > 0) {
+      console.warn('No se encontraron productos en el rango especificado. Últimos 5 productos:', 
+        productos.slice(0, 5).map(p => ({
+          id: p.id,
+          nombre: p.nombre,
+          createdAt: p.createdAt,
+          empresaId: p.empresaId
+        }))
+      );
+    }
+    
+    return productosFiltrados;
+  } catch (error) {
+    console.error('Error al filtrar productos:', error);
+    return productos;
+  }
 }
 
 // Función utilitaria para filtrar clientes por fecha de creación
 function filtrarClientes(clientes, periodo, start, end) {
-  if (periodo === "hoy") {
-    const desde = new Date();
-    desde.setHours(0, 0, 0, 0);
-    const hasta = new Date();
-    hasta.setHours(23, 59, 59, 999);
-    return clientes.filter((c) => {
-      if (!c.createdAt) return false;
-      const fecha = new Date(c.createdAt);
-      return fecha >= desde && fecha <= hasta;
-    });
-  } else if (periodo === "ayer") {
-    const ayer = new Date();
-    ayer.setDate(ayer.getDate() - 1);
-    ayer.setHours(0, 0, 0, 0);
-    const finAyer = new Date();
-    finAyer.setDate(finAyer.getDate() - 1);
-    finAyer.setHours(23, 59, 59, 999);
-    return clientes.filter((c) => {
-      if (!c.createdAt) return false;
-      const fecha = new Date(c.createdAt);
-      return fecha >= ayer && fecha <= finAyer;
-    });
-  } else if (periodo === "7dias") {
-    const hasta = new Date();
-    hasta.setHours(23, 59, 59, 999);
-    const desde = new Date();
-    desde.setDate(hasta.getDate() - 6);
-    desde.setHours(0, 0, 0, 0);
-    return clientes.filter((c) => {
-      if (!c.createdAt) return false;
-      const fecha = new Date(c.createdAt);
-      return fecha >= desde && fecha <= hasta;
-    });
-  } else if (periodo === "1mes") {
-    const hasta = new Date();
-    hasta.setHours(23, 59, 59, 999);
-    const desde = new Date();
-    desde.setMonth(hasta.getMonth() - 1);
-    desde.setHours(0, 0, 0, 0);
-    return clientes.filter((c) => {
-      if (!c.createdAt) return false;
-      const fecha = new Date(c.createdAt);
-      return fecha >= desde && fecha <= hasta;
-    });
-  } else if (periodo === "rango" && start && end) {
-    const desde = new Date(start);
-    desde.setHours(0, 0, 0, 0);
-    const hasta = new Date(end);
-    hasta.setHours(23, 59, 59, 999);
-    return clientes.filter((c) => {
-      if (!c.createdAt) return false;
-      const fecha = new Date(c.createdAt);
-      return fecha >= desde && fecha <= hasta;
-    });
+  console.log(`Filtrando ${clientes?.length || 0} clientes con periodo:`, periodo);
+  
+  if (!clientes || clientes.length === 0) {
+    console.warn('No hay clientes para filtrar');
+    return [];
   }
-  return clientes;
+
+  try {
+    // Mostrar los primeros 3 clientes para depuración
+    console.log('Primeros 3 clientes (sin filtrar):', clientes.slice(0, 3).map(c => ({
+      id: c.id,
+      nombre: c.nombre,
+      apellido: c.apellido,
+      createdAt: c.createdAt,
+      empresaId: c.empresaId
+    })));
+
+    // Si no hay periodo definido, devolver todos los clientes
+    if (!periodo) {
+      console.log('Sin filtro de fecha para clientes - mostrando todos');
+      return clientes;
+    }
+
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    
+    let desde, hasta;
+
+    switch (periodo) {
+      case 'hoy':
+        desde = new Date(hoy);
+        hasta = new Date(hoy);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case 'ayer':
+        desde = new Date(hoy);
+        desde.setDate(desde.getDate() - 1);
+        hasta = new Date(desde);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case '7dias':
+        desde = new Date(hoy);
+        desde.setDate(desde.getDate() - 6);
+        hasta = new Date(hoy);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case '1mes':
+        desde = new Date(hoy);
+        desde.setMonth(desde.getMonth() - 1);
+        hasta = new Date(hoy);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      case 'rango':
+        if (!start || !end) {
+          console.warn('Rango de fechas incompleto', { start, end });
+          return clientes;
+        }
+        desde = new Date(start);
+        desde.setHours(0, 0, 0, 0);
+        hasta = new Date(end);
+        hasta.setHours(23, 59, 59, 999);
+        break;
+      default:
+        console.warn('Período no reconocido, mostrando todos los clientes');
+        return clientes;
+    }
+
+    console.log(`Filtrando clientes entre ${desde} y ${hasta}`);
+    
+    const clientesFiltrados = clientes.filter((c) => {
+      if (!c.createdAt) {
+        console.warn('Cliente sin fecha de creación:', c.id);
+        return false;
+      }
+      
+      let fechaCreacion;
+      try {
+        fechaCreacion = new Date(c.createdAt);
+        if (isNaN(fechaCreacion.getTime())) {
+          console.warn('Fecha de creación inválida en cliente:', c.id, c.createdAt);
+          return false;
+        }
+      } catch (error) {
+        console.warn('Error al parsear fecha en cliente:', c.id, error);
+        return false;
+      }
+      
+      const esValido = fechaCreacion >= desde && fechaCreacion <= hasta;
+      
+      if (!esValido) {
+        console.log(`Cliente ${c.id} fuera de rango:`, {
+          fechaCreacion,
+          desde,
+          hasta,
+          periodo,
+          fechaOriginal: c.createdAt
+        });
+      }
+      
+      return esValido;
+    });
+
+    console.log(`Clientes filtrados: ${clientesFiltrados.length} de ${clientes.length}`);
+    
+    // Si no hay clientes en el rango, mostrar los últimos 5 como referencia
+    if (clientesFiltrados.length === 0 && clientes.length > 0) {
+      console.warn('No se encontraron clientes en el rango especificado. Últimos 5 clientes:', 
+        clientes.slice(0, 5).map(c => ({
+          id: c.id,
+          nombre: c.nombre,
+          apellido: c.apellido,
+          createdAt: c.createdAt,
+          empresaId: c.empresaId
+        }))
+      );
+    }
+    
+    return clientesFiltrados;
+  } catch (error) {
+    console.error('Error al filtrar clientes:', error);
+    return clientes;
+  }
 }
 
 // Función utilitaria para filtrar gastos

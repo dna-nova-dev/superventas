@@ -21,9 +21,10 @@ import { getAllCategorias } from "@/services/categoriaService";
 import { getAllProveedores } from "@/services/proveedorService";
 import { createCompra } from "@/services/compraService";
 import { createCompraDetalle } from "@/services/compraDetalleService";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/data/mockData";
-import type { Producto, Categoria, Proveedor, CompraDetalle } from "@/types";
+import type { Producto, Categoria, Proveedor, CompraDetalle, CreateCompraDetalle } from "@/types";
+import type { Caja } from "@/types/caja.interface";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -77,7 +78,7 @@ export const CompraForm = () => {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]); // Initialize with empty array
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
-  const [cajas, setCajas] = useState<any[]>([]);
+  const [cajas, setCajas] = useState<Caja[]>([]);
   const [selectedCajaId, setSelectedCajaId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategorias, setSelectedCategorias] = useState<number[]>([]);
@@ -125,7 +126,7 @@ export const CompraForm = () => {
       }
     };
     loadData();
-  }, [toast]); // Added toast to dependency array
+  }, [toast, empresaId]); // Added toast and empresaId to dependency array
 
   // Cargar cajas disponibles
   useEffect(() => {
@@ -384,6 +385,15 @@ export const CompraForm = () => {
       });
       return;
     }
+    
+    if (!selectedProveedor) {
+      toast({
+        title: "Error",
+        description: "Debe seleccionar un proveedor",
+        variant: "destructive",
+      });
+      return;
+    }
     if (pago < total) {
       toast({
         title: "Error",
@@ -395,9 +405,26 @@ export const CompraForm = () => {
 
     setLoading(true);
     try {
+      // Generate a compra code in the format: COMPRAYYYY-XXXX
+      const now = new Date();
+      const year = now.getFullYear();
+      // Generate a random 4-digit number for the sequential part
+      const randomNum = Math.floor(1000 + Math.random() * 9000);
+      const compraCodigo = `COMPRA${year}-${randomNum}`;
+      
+      // Prepare detalles array matching the expected API format
+      const detalles = productosSeleccionados.map(p => ({
+        cantidad: p.cantidad,
+        precioCompra: p.precio, // Keep as string as expected by the API
+        total: (p.cantidad * parseFloat(p.precio)).toFixed(2),
+        descripcion: p.producto.nombre || `Producto ${p.producto.id}`,
+        productoId: p.producto.id,
+        empresaId: empresaId
+      } as CreateCompraDetalle));
+
       // Crear compra en backend
       const compra = await createCompra({
-        codigo: `V-${Date.now()}`,
+        codigo: compraCodigo,
         proveedorId: selectedProveedor || null,
         usuarioId: currentUser.id,
         cajaId: selectedCajaId || currentUser.cajaId || 1,
@@ -406,46 +433,43 @@ export const CompraForm = () => {
         pagado: pago.toFixed(2),
         cambio: cambio.toFixed(2),
         fecha: new Date().toISOString().split("T")[0],
-        // Use en-US locale for more standard am/pm formatting and convert to lowercase
         hora: new Date()
-          .toLocaleTimeString("en-US", {
+          .toLocaleTimeString("es-ES", {
             hour: "2-digit",
             minute: "2-digit",
-            hour12: true,
-          })
-          .toLowerCase(),
-        detalles: [], // Detalles se crearán después
+            hour12: false
+          }),
+        detalles: detalles,
       });
 
-      // Crear detalles de venta y actualizar stock
+      if (!compra || !compra.id) {
+        throw new Error("No se pudo crear la compra correctamente");
+      }
+
+      // Actualizar el stock de los productos
       await Promise.all(
         productosSeleccionados.map(async (p) => {
-          await createCompraDetalle({
-            // Asegúrate que los campos coincidan con la interfaz VentaDetalle
-            id: 0, // O el ID real si es necesario
-            cantidad: p.cantidad,
-            precioVenta: p.precio, // Use the string value directly
-            precioCompra: p.producto.precioCompra, // Asumiendo que existe
-            descripcion: p.producto.nombre,
-            total: (p.cantidad * parseFloat(p.precio)).toFixed(2),
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            deletedAt: null,
-            compraCodigo: compra.codigo,
-            productoId: p.producto.id,
-            empresaId: empresaId,
-          } as CompraDetalle); // Cast a VentaDetalle
-          // Actualizar stock
           await updateProducto(p.producto.id, {
-            stockTotal: (p.producto.stockTotal || 0) - p.cantidad,
+            ...p.producto,
+            stockTotal: (p.producto.stockTotal || 0) + p.cantidad, // Sumar al stock en compras
           });
         })
       );
 
       // Si esta compra era pendiente, eliminarla de localStorage
       if (editingPendingSaleId) {
-        eliminarCompraPendiente(editingPendingSaleId); // Reutiliza la función para limpiar localStorage y state
+        eliminarCompraPendiente(editingPendingSaleId);
       }
+
+      // Mostrar mensaje de éxito
+      toast({
+        title: "Compra registrada",
+        description: "La compra se ha registrado correctamente",
+        variant: "default",
+      });
+
+      // Redirigir a la página de compras
+      navigate("/compras");
 
       toast({
         title: "Compra registrada",
@@ -753,18 +777,22 @@ export const CompraForm = () => {
                 Proveedor
               </label>
               <Select
-                value={selectedProveedor?.toString() ?? "no_proveedor"}
-                onValueChange={(value) =>
-                  setSelectedProveedor(
-                    value === "no_proveedor" ? null : Number(value)
-                  )
-                }
+                value={selectedProveedor?.toString()}
+                onValueChange={(value) => {
+                  const selectedId = value ? Number(value) : null;
+                  setSelectedProveedor(selectedId);
+                  if (selectedId) {
+                    const selected = proveedores.find(p => p.id === selectedId);
+                    setSelectedName(selected?.nombre || "");
+                  } else {
+                    setSelectedName("");
+                  }
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar proveedor" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="no_proveedor">Sin proveedor</SelectItem>
                   {proveedores.map((proveedor) => (
                     <SelectItem
                       key={proveedor.id}

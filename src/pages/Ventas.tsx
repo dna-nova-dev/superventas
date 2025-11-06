@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { Layout } from "@/components/layout/Layout";
 import { DataTable } from "@/components/ui/DataTable";
 import { formatCurrency } from "@/data/mockData";
@@ -22,7 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { motion } from "framer-motion";
+import { Variants, motion } from "framer-motion";
 import {
   getVentas,
   deleteVenta as deleteVentaService,
@@ -88,7 +88,7 @@ const itemVariants = {
   show: { opacity: 1, y: 0 },
 };
 
-const tableVariants = {
+const tableVariants: Variants = {
   hidden: {
     opacity: 0,
     y: 20,
@@ -98,7 +98,7 @@ const tableVariants = {
     y: 0,
     transition: {
       duration: 0.3,
-      ease: "easeOut",
+      ease: [0.4, 0, 0.2, 1], // Using cubic-bezier values instead of string
     },
   },
 };
@@ -116,7 +116,14 @@ const Ventas = () => {
   const [loading, setLoading] = useState(true);
   const [deleteVenta, setDeleteVenta] = useState<Venta | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [selectedVentaDetails, setSelectedVentaDetails] = useState<any>(null);
+  interface VentaDetails {
+    venta: Venta;
+    detalles: VentaDetalle[];
+    cliente?: Cliente;
+    usuario?: Usuario;
+  }
+
+  const [selectedVentaDetails, setSelectedVentaDetails] = useState<VentaDetails | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const isMobile = useMediaQuery("(max-width: 767px)");
@@ -129,19 +136,58 @@ const Ventas = () => {
     to: undefined,
   });
 
-  useEffect(() => {
-    const init = async () => {
-      await Promise.all([
-        loadVentas(),
-        loadClientes(),
-        loadUsuarios(),
-        loadDetalles(),
-      ]);
-    };
-    init();
-  }, []);
+  const loadVentas = useCallback(async (forceReload = false) => {
+    try {
+      setLoading(true);
+      console.log('Cargando ventas...');
+      
+      // Cargar solo las ventas completadas
+      const allVentas = await getVentas('completada');
+      console.log('Ventas completadas cargadas:', allVentas);
+      
+      if (!empresaId) {
+        console.error('No se ha establecido empresaId');
+        toast({
+          title: "Error",
+          description: "No se ha podido identificar la empresa",
+          variant: "destructive",
+        });
+        return [];
+      }
+      
+      const filteredVentas = allVentas.filter((v) => v.empresaId === empresaId);
+      console.log('Ventas filtradas:', filteredVentas);
+      
+      // Ordenar por fecha más reciente primero
+      const sortedVentas = [...filteredVentas].sort((a, b) => 
+        new Date(b.fecha + 'T' + b.hora).getTime() - new Date(a.fecha + 'T' + a.hora).getTime()
+      );
+      
+      setVentas(sortedVentas);
+      
+      if (sortedVentas.length === 0) {
+        console.log('No se encontraron ventas para esta empresa');
+        toast({
+          title: "Información",
+          description: "No se encontraron ventas registradas",
+        });
+      }
+      
+      return sortedVentas;
+    } catch (error) {
+      console.error('Error al cargar ventas:', error);
+      toast({
+        title: "Error",
+        description: `No se pudieron cargar las ventas: ${error instanceof Error ? error.message : 'Error desconocido'}`,
+        variant: "destructive",
+      });
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, [empresaId, toast]);
 
-  const loadDetalles = async () => {
+  const loadDetalles = useCallback(async () => {
     try {
       const allDetalles = await getVentaDetalles();
       const filteredDetalles = allDetalles.filter(
@@ -155,9 +201,9 @@ const Ventas = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [empresaId, toast]);
 
-  const loadClientes = async () => {
+  const loadClientes = useCallback(async () => {
     try {
       const data = await getAllClientes();
       setClientes(data);
@@ -168,13 +214,9 @@ const Ventas = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [toast]);
 
-  const getClienteById = (id: number) => {
-    return clientes.find((c) => c.id === id);
-  };
-
-  const loadUsuarios = async () => {
+  const loadUsuarios = useCallback(async () => {
     try {
       const data = await usuarioService.getAllUsuarios();
       setUsuarios(data);
@@ -185,28 +227,49 @@ const Ventas = () => {
         variant: "destructive",
       });
     }
+  }, [toast]);
+
+  const getClienteById = (id: number) => {
+    return clientes.find((c) => c.id === id);
   };
 
   const getUsuarioById = (id: number) => {
     return usuarios.find((u) => u.usuario_id === id);
   };
 
-  const loadVentas = async () => {
-    try {
-      setLoading(true);
-      const allVentas = await getVentas();
-      const filteredVentas = allVentas.filter((v) => v.empresaId === empresaId);
-      setVentas(filteredVentas);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar las ventas",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+  // Cargar datos iniciales
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const refresh = params.get('refresh') === 'true';
+    
+    if (empresaId) {
+      const loadData = async () => {
+        try {
+          await loadVentas(refresh);
+          await Promise.all([
+            loadClientes(),
+            loadUsuarios(),
+            loadDetalles()
+          ]);
+          
+          // Limpiar el parámetro de la URL si existe
+          if (refresh) {
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
+          }
+        } catch (error) {
+          console.error('Error al cargar datos:', error);
+          toast({
+            title: "Error",
+            description: "No se pudieron cargar los datos. Por favor, intente nuevamente.",
+            variant: "destructive",
+          });
+        }
+      };
+      
+      loadData();
     }
-  };
+  }, [empresaId, loadVentas, loadClientes, loadUsuarios, loadDetalles, toast]);
 
   const isToday = (dateString: string) => {
     const today = new Date();
@@ -609,12 +672,12 @@ const Ventas = () => {
             PRODUCTOS
           </div>
           <div className="mt-2 space-y-2">
-            {detalles.map((detalle: any, index: number) => (
+            {detalles.map((detalle: VentaDetalle, index: number) => (
               <div key={index} className="text-xs">
                 <div className="flex justify-between font-bold">
                   <span>{detalle.descripcion}</span>
                   <span>
-                    {formatCurrency(detalle.cantidad * detalle.precioVenta)}
+                    {formatCurrency(Number(detalle.cantidad) * Number(detalle.precioVenta))}
                   </span>
                 </div>
                 <div className="text-gray-600 flex justify-between pl-2">
@@ -762,8 +825,8 @@ const Ventas = () => {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-full">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
       </Layout>
     );
@@ -888,14 +951,37 @@ const Ventas = () => {
               )}
             </motion.div>
 
-            <motion.div
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-              variants={containerVariants}
-            >
-              {filteredVentas.map((venta) => {
-                const cliente = getClienteById(venta.clienteId);
-                const usuario = getUsuarioById(venta.usuarioId);
-                return (
+            {filteredVentas.length === 0 ? (
+              <motion.div 
+                className="flex flex-col items-center justify-center py-12 text-center"
+                variants={itemVariants}
+              >
+                <ShoppingBag className="h-16 w-16 text-muted-foreground/30 mb-4" />
+                <h3 className="text-lg font-medium text-muted-foreground">No hay ventas registradas</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {searchQuery || dateFilter !== 'all' 
+                    ? 'No se encontraron ventas que coincidan con los filtros aplicados.' 
+                    : 'Comience creando una nueva venta para verla aquí.'}
+                </p>
+                {canEdit() && (
+                  <Button 
+                    onClick={handleAddVenta} 
+                    className="mt-4"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Crear primera venta
+                  </Button>
+                )}
+              </motion.div>
+            ) : (
+              <motion.div
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                variants={containerVariants}
+              >
+                {filteredVentas.map((venta) => {
+                  const cliente = getClienteById(venta.clienteId);
+                  const usuario = getUsuarioById(venta.usuarioId);
+                  return (
                   <motion.div
                     variants={itemVariants}
                     whileHover={{ scale: 1.02 }}
@@ -1028,29 +1114,8 @@ const Ventas = () => {
                   </motion.div>
                 );
               })}
-
-              {canEdit() && (
-                <motion.div
-                  variants={itemVariants}
-                  onClick={handleAddVenta}
-                  className={cn(
-                    "bg-transparent p-5 rounded-xl border border-dashed shadow-sm",
-                    "flex flex-col items-center justify-center min-h-[100px]",
-                    "cursor-pointer hover:border-primary/60 hover:bg-primary/5 transition-colors",
-                    "md:min-h-[200px]",
-                    isMobile ? "w-full" : ""
-                  )}
-                >
-                  <div className="p-3 rounded-full bg-primary/10 mb-3">
-                    <Plus className="h-6 w-6 text-primary" />
-                  </div>
-                  <p className="font-medium">Registrar nueva venta</p>
-                  <p className="text-sm text-muted-foreground">
-                    Clic para agregar
-                  </p>
-                </motion.div>
-              )}
             </motion.div>
+            )}
           </motion.div>
         )}
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from "@/hooks/useAuth";
 import { Layout } from '@/components/layout/Layout';
 import { DataTable, DataTableActions } from '@/components/ui/DataTable';
 import { formatCurrency } from '@/data/mockData';
@@ -82,7 +82,7 @@ const itemVariants = {
 const Productos = () => {
   const { toast } = useToast();
   const { getViewMode, canEdit, canDelete } = useRolePermissions();
-  const { empresaId } = useAuth();
+  const { empresaId, user } = useAuth(); // Añadido user al destructuring
   const viewMode = getViewMode();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [searchQuery, setSearchQuery] = useState('');
@@ -103,22 +103,38 @@ const Productos = () => {
   });
   const [productos, setProductos] = useState<Producto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const loadAllProducts = async () => {
-    const allProductos = await getAllProductos();
-    const filteredProductos = allProductos.filter(
-      (p: any) => p.empresaId === empresaId
-    );
-    setProductos(filteredProductos);
-  };
-
-  const loadCategorias = async () => {
+  const loadAllProducts = useCallback(async () => {
     try {
-      const allCategorias = await getAllCategorias();
-      const filteredCategorias = allCategorias.filter(
-        (c: any) => c.empresaId === empresaId
+      if (!empresaId) {
+        return;
+      }
+      
+      const allProductos = await getAllProductos();
+      const filteredProductos = allProductos.filter(
+        (p: Producto) => p.empresaId === empresaId
       );
-      setCategorias(filteredCategorias);
+      setProductos(filteredProductos);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los productos",
+        variant: "destructive"
+      });
+    }
+  }, [empresaId, toast]);
+
+  const loadCategorias = useCallback(async () => {
+    try {
+      if (!empresaId) {
+        return;
+      }
+      
+      // Pasar el empresaId directamente para filtrar en el servidor
+      const categoriasFiltradas = await getAllCategorias(empresaId);
+      setCategorias(categoriasFiltradas);
     } catch (error) {
       toast({
         title: "Error",
@@ -126,24 +142,53 @@ const Productos = () => {
         variant: "destructive"
       });
     }
-  };
+  }, [empresaId, toast]);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        await loadAllProducts();
-        await loadCategorias();
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "No se pudieron cargar los datos",
-          variant: "destructive"
-        });
+  const loadAllData = useCallback(async () => {
+    try {
+      // Usar empresaId del contexto o del usuario
+      const currentEmpresaId = empresaId || user?.empresaId;
+      
+      if (currentEmpresaId) {
+        await Promise.all([
+          loadAllProducts(),
+          loadCategorias()
+        ]);
+      } else {
+        setError('No se pudo determinar la empresa. Por favor, seleccione una empresa.');
       }
-    };
+    } catch (error) {
+      setError('Error al cargar los datos. Por favor, intente nuevamente.');
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los datos",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [empresaId, user, loadAllProducts, loadCategorias, toast]);
 
-    fetchData();
-  }, []);
+  // Cargar datos cuando cambia empresaId
+  // Efecto para cargar datos cuando el componente se monta o cambia el empresaId o el usuario
+  useEffect(() => {
+    // Usar empresaId del contexto o del usuario
+    const currentEmpresaId = empresaId || user?.empresaId;
+    
+    if (currentEmpresaId) {
+      loadAllData();
+    } 
+    // Si no hay empresaId ni en el contexto ni en el usuario
+    else if (user && !currentEmpresaId) {
+      setError('No se pudo determinar la empresa. Por favor, seleccione una empresa.');
+      setLoading(false);
+    }
+    // Si no hay usuario, probablemente debería redirigir al login
+    else if (!user) {
+      setError('No hay usuario autenticado. Por favor, inicie sesión.');
+      setLoading(false);
+    }
+  }, [empresaId, user, loadAllData]);
   const [editingProduct, setEditingProduct] = useState<Producto | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [productoToDelete, setProductoToDelete] = useState<Producto | null>(null);
@@ -370,7 +415,6 @@ const Productos = () => {
         foto: data.secure_url
       }));
     } catch (error) {
-      console.error('Error uploading image:', error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "No se pudo subir la imagen",
@@ -379,7 +423,7 @@ const Productos = () => {
     } finally {
       setUploading(false);
     }
-  }, []);
+  }, [toast]);
 
   const photoInputSection = (
     <div className="space-y-2">

@@ -1,22 +1,7 @@
-
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import type { UserResponse } from "@/services/usuarioService" 
+import { useState, useEffect, type ReactNode } from "react"
+import type { UserResponse } from "@/services/usuarioService"
 import type { Empresa } from "@/types"
-
-interface AuthContextType {
-  user: UserResponse | null
-  setUser: (user: UserResponse | null) => void
-  logout: () => void
-  currentUser: UserResponse | null
-  userRole: string | null
-  empresa: Empresa | null
-  setEmpresa: (empresa: Empresa | null) => void
-  empresaId: number | null
-  setEmpresaId: (id: number | null) => void
-  currentEmpresa: Empresa | null
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+import { AuthContext } from "./auth/AuthContext"
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserResponse | null>(() => {
@@ -38,17 +23,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<string | null>(null)
   const [currentEmpresa, setCurrentEmpresa] = useState<Empresa | null>(null) 
 
+  // Efecto para manejar cambios en el usuario
   useEffect(() => {
     if (user) {
-      localStorage.setItem("user", JSON.stringify(user))
-      setCurrentUser(user)
-      setUserRole(user.cargo)
+      localStorage.setItem("user", JSON.stringify(user));
+      setCurrentUser(user);
+      setUserRole(user.cargo);
+      
+      // Si el usuario tiene una empresa asignada, la establecemos
+      if (user.empresaId && !empresaId) {
+        console.log('Estableciendo empresaId desde el usuario:', user.empresaId);
+        setEmpresaId(user.empresaId);
+      }
     } else {
-      localStorage.removeItem("user")
-      setCurrentUser(null)
-      setUserRole(null)
+      localStorage.removeItem("user");
+      setCurrentUser(null);
+      setUserRole(null);
     }
-  }, [user])
+  }, [user, empresaId]); // Incluimos empresaId en las dependencias
 
   useEffect(() => {
     if (empresaId !== null) {
@@ -117,11 +109,4 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   )
 }
 
-export const useAuth = () => {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider")
-  }
-  return context
-}
-
+// No es necesario exportar AuthContextType aquí, ya que se exporta desde types.ts

@@ -10,29 +10,41 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import Index from "./pages/Index";
-import NotFound from "./pages/NotFound";
-import Dashboard from "./pages/Dashboard";
-import Cajas from "./pages/Cajas";
-import Compras from "./pages/Compras";
-import Usuarios from "./pages/Usuarios";
-import Clientes from "./pages/Clientes";
-import Categorias from "./pages/Categorias";
-import Productos from "./pages/Productos";
-import Ventas from "./pages/Ventas";
-import Vender from "./pages/Vender";
-import Reportes from "./pages/Reportes";
-import Configuraciones from "./pages/Configuraciones";
-import Gastos from "./pages/Gastos";
-import Empresas from "./pages/Empresas";
-import Perfil from "./pages/Perfil";
-import Login from "./pages/Login";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { lazy, Suspense, useEffect } from 'react';
+import { AuthProvider } from "./contexts/AuthContext";
+import { useAuth } from "./hooks/useAuth";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import { useEffect } from "react";
 import { useRolePermissions } from "@/hooks/useRolePermissions";
-import Comprar from "./pages/Comprar";
-import Proveedores from "./pages/Proveedores";
+
+// Lazy load pages
+const Index = lazy(() => import("./pages/Index"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Cajas = lazy(() => import("./pages/Cajas"));
+const Compras = lazy(() => import("./pages/Compras"));
+const Usuarios = lazy(() => import("./pages/Usuarios"));
+const Clientes = lazy(() => import("./pages/Clientes"));
+const Categorias = lazy(() => import("./pages/Categorias"));
+const Productos = lazy(() => import("./pages/Productos"));
+const Ventas = lazy(() => import("./pages/Ventas"));
+const Vender = lazy(() => import("./pages/Vender"));
+const Reportes = lazy(() => import("./pages/Reportes"));
+const Configuraciones = lazy(() => import("./pages/Configuraciones"));
+const Gastos = lazy(() => import("./pages/Gastos"));
+const Empresas = lazy(() => import("./pages/Empresas"));
+const Perfil = lazy(() => import("./pages/Perfil"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const Comprar = lazy(() => import("./pages/Comprar"));
+const Proveedores = lazy(() => import("./pages/Proveedores"));
+const VentasPendientes = lazy(() => import("./pages/VentasPendientes"));
+
+// Loading component
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+  </div>
+);
 
 const queryClient = new QueryClient();
 
@@ -57,11 +69,12 @@ const AppRoutes = () => {
     if (location.pathname === "/" && userRole === "Cajero") {
       navigate(getInitialPage());
     }
-  }, [location.pathname, userRole]);
+  }, [getInitialPage, location.pathname, navigate, userRole]);
 
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
       <Route
         path="/"
         element={
@@ -135,6 +148,14 @@ const AppRoutes = () => {
         }
       />
       <Route
+        path="/ventas-pendientes"
+        element={
+          <ProtectedRoute>
+            <VentasPendientes />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/compras"
         element={
           <ProtectedRoute>
@@ -203,20 +224,23 @@ const AppRoutes = () => {
   );
 };
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <ThemeProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </TooltipProvider>
-      </ThemeProvider>
-    </AuthProvider>
-  </QueryClientProvider>
-);
-
+const App = () => {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AuthProvider>
+          <ThemeProvider>
+            <TooltipProvider>
+              <Suspense fallback={<LoadingFallback />}>
+                <AppRoutes />
+              </Suspense>
+              <Toaster />
+              <Sonner />
+            </TooltipProvider>
+          </ThemeProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
+  );
+};
 export default App;

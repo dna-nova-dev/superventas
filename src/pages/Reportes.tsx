@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { formatCurrency } from "@/data/mockData";
 import {
@@ -32,7 +32,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { getAllClientes } from "@/services/clienteService";
 import { getAllCajas } from "@/services/cajaService";
 import {
@@ -60,7 +60,9 @@ import {
 import { Caja } from "../types/caja.interface";
 
 interface CategorySalesData {
-  categoria: string;
+  empresaId: number;
+  categoriaId: number;
+  categoriaNombre: string;
   total: number;
   color?: string;
 }
@@ -177,7 +179,7 @@ const Reportes = () => {
     ? new ReportGenerator(currentEmpresa)
     : null;
 
-  const loadCajas = async () => {
+  const loadCajas = useCallback(async () => {
     try {
       const allCajas = await getAllCajas();
       setCajas(allCajas);
@@ -188,46 +190,45 @@ const Reportes = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [toast]);
+
+  const loadInitialData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [
+        ventasData,
+        productosData,
+        ventaDetallesData,
+        categoriasData,
+        clientesData,
+      ] = await Promise.all([
+        getVentas(),
+        getAllProductos(),
+        getVentaDetalles(),
+        getAllCategorias(),
+        getAllClientes(),
+      ]);
+
+      setVentas(ventasData);
+      setProductos(productosData);
+      setVentaDetalles(ventaDetallesData);
+      setCategorias(categoriasData);
+      setClientes(clientesData);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los datos",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        setLoading(true);
-        const [
-          ventasData,
-          productosData,
-          ventaDetallesData,
-          categoriasData,
-          clientesData,
-        ] = await Promise.all([
-          getVentas(),
-          getAllProductos(),
-          getVentaDetalles(),
-          getAllCategorias(),
-          getAllClientes(),
-        ]);
-
-        setVentas(ventasData);
-        setProductos(productosData);
-        setVentaDetalles(ventaDetallesData);
-        setCategorias(categoriasData);
-        setClientes(clientesData);
-      } catch (error) {
-        console.error("Error loading dashboard data:", error);
-        toast({
-          title: "Error",
-          description: "No se pudieron cargar los datos",
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadCajas();
     loadInitialData();
-  }, [toast]);
+  }, [loadCajas, loadInitialData]);
 
   const filterVentasByPeriod = (period: string): Venta[] => {
     const today = new Date();
@@ -302,7 +303,9 @@ const Reportes = () => {
           .reduce((sum, detalle) => sum + parseFloat(detalle.total), 0);
 
         return {
-          categoria: categoria.nombre,
+          empresaId: categoria.empresaId || 1, // Assuming a default empresaId if not available
+          categoriaId: categoria.id,
+          categoriaNombre: categoria.nombre,
           total,
           color: COLORS[index % COLORS.length],
         };
@@ -353,7 +356,6 @@ const Reportes = () => {
         }`,
       });
     } catch (error) {
-      console.error("Error al generar reporte:", error);
       toast({
         title: "Error",
         description: "Ocurrió un error al generar el reporte",
@@ -361,8 +363,6 @@ const Reportes = () => {
       });
     }
   };
-
-  console.log(filteredVentas);
 
   if (loading) {
     return (
@@ -672,9 +672,9 @@ const Reportes = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredVentas.map((item, index) => (
+                    {filteredVentas.map((item) => (
                       <tr
-                        key={index}
+                        key={`${item.id}-${item.fecha}`}
                         className="border-b last:border-0 hover:bg-muted/50"
                       >
                         <td className="py-3">ventas</td>
@@ -743,12 +743,12 @@ const Reportes = () => {
                 </tr>
               </thead>
               <tbody>
-                {totalVentasPorCategorias.map((item, index) => (
+                {totalVentasPorCategorias.map((item) => (
                   <tr
-                    key={index}
+                    key={`${item.categoriaId}-${item.total}`}
                     className="border-b last:border-0 hover:bg-muted/50"
                   >
-                    <td className="py-3">{item.categoria}</td>
+                    <td className="py-3">{item.categoriaId}</td>
                     <td className="py-3 text-right font-medium">
                       {formatCurrency(item.total)}
                     </td>

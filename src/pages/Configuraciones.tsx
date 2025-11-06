@@ -4,7 +4,7 @@ import { Settings, Building, Bell, Database, Globe, Palette } from "lucide-react
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { motion } from "framer-motion"
-import { useAuth } from "@/contexts/AuthContext"
+import { useAuth } from "@/hooks/useAuth"
 import { ConfiguracionEmpresa } from "@/components/configuraciones/ConfiguracionEmpresa"
 import { ConfiguracionBaseDatos } from "@/components/configuraciones/ConfiguracionBaseDatos"
 import { ConfiguracionApariencia } from "@/components/configuraciones/ConfiguracionApariencia"

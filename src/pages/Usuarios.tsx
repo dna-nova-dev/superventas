@@ -16,7 +16,7 @@ import {
   KeyRound,
   RefreshCw
 } from 'lucide-react';
-import { Usuario } from '@/types';
+import { Empresa, Usuario } from '@/types';
 import { Caja } from '@/types/caja.interface';
 import { useRolePermissions } from '@/hooks/useRolePermissions';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -58,11 +58,13 @@ import {
 } from "@/components/ui/AlertDialog";
 import { usuarioService } from '@/services/usuarioService';
 import { getAllCajas, getCajaById } from '@/services/cajaService';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { getAllEmpresas } from '@/services/empresaService';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
-const containerVariants = {
+import { Variants } from 'framer-motion';
+
+const containerVariants: Variants = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
@@ -72,12 +74,12 @@ const containerVariants = {
   }
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { opacity: 0, y: 20 },
   show: { opacity: 1, y: 0 }
 };
 
-const tableVariants = {
+const tableVariants: Variants = {
   hidden: {
     opacity: 0,
     y: 20
@@ -87,7 +89,7 @@ const tableVariants = {
     y: 0,
     transition: {
       duration: 0.3,
-      ease: "easeOut"
+      ease: [0.16, 1, 0.3, 1] // Using cubic-bezier values instead of string
     }
   }
 };
@@ -95,7 +97,7 @@ const tableVariants = {
 const Usuarios = () => {
   const { toast } = useToast();
   const { getViewMode, canEdit, canDelete, userRole } = useRolePermissions();
-  const { empresaId } = useAuth();
+  const { empresaId, user } = useAuth();
   const viewMode = getViewMode();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<Usuario | null>(null);
@@ -113,7 +115,7 @@ const Usuarios = () => {
     usuario_foto: '',
     empresaId: 0
   });
-  const [empresas, setEmpresas] = useState<any[]>([]);
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [uploading, setUploading] = useState(false);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [cajas, setCajas] = useState<Caja[]>([]);
@@ -123,36 +125,82 @@ const Usuarios = () => {
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const isMobile = useMediaQuery("(max-width: 767px)");
 
+  // Usamos canEdit y canDelete de useRolePermissions
+  const canEditUser = (usuario?: Usuario) => {
+    // No permitir editar al propietario a menos que sea el propio usuario
+    if (usuario?.usuario_cargo === 'Owner' && usuario.usuario_id !== user?.id) {
+      return false;
+    }
+    return canEdit('usuarios');
+  };
+
+  const canDeleteUser = (usuario?: Usuario) => {
+    // No permitir eliminar al propietario
+    if (usuario?.usuario_cargo === 'Owner') {
+      return false;
+    }
+    return canDelete('usuarios');
+  };
+
   useEffect(() => {
-    const loadUsers = async () => {
+    const loadData = async () => {
+      // Don't load anything until we have user role and company ID
+      if (!userRole || (userRole !== 'Owner' && !user?.empresaId)) {
+        return;
+      }
+
       try {
+        // Load users first
         const users = await usuarioService.getAllUsuarios();
+        
+        // Filter users based on role
+        const currentEmpresaId = userRole === 'Owner' ? empresaId : user?.empresaId;
+        const filteredUsers = users.filter(u => u.empresaId === currentEmpresaId);
+        setUsuarios(filteredUsers);
+        
+        // Load companies if user is Owner
         if (userRole === 'Owner') {
-          setUsuarios(users);
           const empresasData = await getAllEmpresas();
           setEmpresas(empresasData);
-        } else {
-          const filtered = users.filter(u => u.empresaId === empresaId);
-          setUsuarios(filtered);
         }
+        
+        // Load and filter cash registers
         const allCajas = await getAllCajas();
-        const filteredCajas = allCajas.filter(c => c.empresaId === empresaId);
-        setCajas(filteredCajas);
+        
+        // Filter cash registers based on role
         if (userRole === 'Owner') {
-          setCajas(allCajas);
+          // Owner sees all non-deleted cash registers
+          const activeCajas = allCajas.filter(c => c.deletedAt === null);
+          setCajas(activeCajas);
+        } else if (currentEmpresaId) {
+          // Other roles see only their company's cash registers
+          const filteredCajas = allCajas.filter(c => {
+            const cajaEmpresaId = typeof c.empresaId === 'object' 
+              ? c.empresaId
+              : c.empresaId;
+            return cajaEmpresaId === currentEmpresaId && c.deletedAt === null;
+          });
+          setCajas(filteredCajas);
         }
       } catch (error) {
         toast({
           title: "Error",
-          description: "No se pudo cargar la lista de usuarios",
+          description: "No se pudieron cargar los datos. Por favor, intente de nuevo.",
           variant: "destructive"
         });
       }
     };
-    loadUsers();
-  }, []);
 
-  const ResponsiveDialogDrawer = ({ open, onOpenChange, children }) => {
+    loadData();
+  }, [userRole, empresaId, user?.empresaId, toast]);
+
+  interface ResponsiveDialogDrawerProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    children: React.ReactNode;
+  }
+
+  const ResponsiveDialogDrawer: React.FC<ResponsiveDialogDrawerProps> = ({ open, onOpenChange, children }) => {
     if (isDesktop) {
       return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -201,21 +249,42 @@ const Usuarios = () => {
   };
 
   const handleEdit = (usuario: Usuario) => {
+    // Verificar si el usuario puede ser editado
+    if (!canEditUser(usuario)) {
+      toast({
+        title: "Acceso denegado",
+        description: "No tienes permiso para editar al propietario de la compañía.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     setEditingUser(usuario);
-    setIsEditing(true);
     setNewUser({
       usuario_nombre: usuario.usuario_nombre,
-      usuario_apellido: usuario.usuario_apellido,
+      usuario_apellido: usuario.usuario_apellido || '',
       usuario_usuario: usuario.usuario_usuario,
-      usuario_email: usuario.usuario_email,
-      usuario_cargo: usuario.usuario_cargo,
-      caja_id: usuario.caja_id,
-      usuario_foto: usuario.usuario_foto,
-      empresaId: usuario.empresaId
+      usuario_email: usuario.usuario_email || '',
+      usuario_cargo: usuario.usuario_cargo || 'Cajero',
+      caja_id: usuario.caja_id || 0,
+      usuario_foto: usuario.usuario_foto || '',
+      empresaId: usuario.empresaId || 0
     });
+    setIsCreating(false);
+    setIsEditing(true);
   };
 
   const handleDelete = (usuario: Usuario) => {
+    // Verificar si el usuario puede ser eliminado
+    if (usuario.usuario_cargo === 'Owner') {
+      toast({
+        title: "Acción no permitida",
+        description: "No se puede eliminar al propietario de la compañía.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     setUserToDelete(usuario);
     setShowDeleteAlert(true);
   };
@@ -259,12 +328,32 @@ const Usuarios = () => {
           description: `Se ha actualizado ${newUser.usuario_nombre} en el sistema.`
         });
       } else {
-        const userToAdd = await usuarioService.createUsuario({
+        // Determinar el ID de la empresa para el nuevo usuario
+        const targetEmpresaId = userRole === 'Owner' ? (newUser.empresaId || empresaId) : (empresaId || user?.empresaId);
+        
+        const userData = {
           ...newUser,
           usuario_clave: '123456',
-          empresaId: userRole === 'Owner' ? newUser.empresaId : empresaId
-        });
+          empresaId: targetEmpresaId,
+          has_changed_password: false, // New users must change their password on first login
+          hasChangedPassword: false // Asegurar compatibilidad con la interfaz
+        };
+        
+        const userToAdd = await usuarioService.createUsuario(userData as Usuario);
+        
+        // Actualizar la lista de usuarios de manera optimista
         setUsuarios(prev => [...prev, userToAdd]);
+        
+        // Opcional: Recargar la lista completa para asegurar consistencia
+        try {
+          const updatedUsers = await usuarioService.getAllUsuarios();
+          const currentEmpresaId = userRole === 'Owner' ? targetEmpresaId : (empresaId || user?.empresaId);
+          const filteredUsers = updatedUsers.filter(u => u.empresaId === currentEmpresaId);
+          setUsuarios(filteredUsers);
+        } catch (error) {
+          // Si hay un error al actualizar, mantener el estado actual
+        }
+        
         toast({
           title: "Usuario agregado",
           description: `Se ha agregado ${newUser.usuario_nombre} al sistema.`
@@ -293,16 +382,16 @@ const Usuarios = () => {
   };
 
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploading(true);
+    if (!e.target.files || !e.target.files[0]) return;
+    
+    const file = e.target.files[0];
     const formData = new FormData();
     formData.append('file', file);
     formData.append('upload_preset', 'superventas');
     formData.append('timestamp', String(Date.now() / 1000));
 
     try {
+      setUploading(true);
       const response = await fetch(
         `https://api.cloudinary.com/v1_1/daizfqpru/image/upload`,
         {
@@ -321,7 +410,6 @@ const Usuarios = () => {
         usuario_foto: data.secure_url
       }));
     } catch (error) {
-      console.error('Error uploading image:', error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "No se pudo subir la imagen",
@@ -330,7 +418,7 @@ const Usuarios = () => {
     } finally {
       setUploading(false);
     }
-  }, []);
+  }, [setUploading, setNewUser, toast]);
 
   const handleResetPassword = (userId: number) => {
     if (window.confirm('¿Está seguro de restablecer la contraseña?')) {
@@ -966,24 +1054,45 @@ const Usuarios = () => {
                   </Select>
                 </div>
 
-                {userRole === 'Owner' && (
+                {(userRole === 'Owner' || userRole === 'Administrador') && (
                   <div className="space-y-2">
                     <Label>Empresa</Label>
                     <Select
-                      value={newUser.empresaId ? String(newUser.empresaId) : ''}
-                      onValueChange={(value) =>
-                        setNewUser({ ...newUser, empresaId: parseInt(value) || 0 })
-                      }
+                      value={newUser.empresaId ? String(newUser.empresaId) : String(empresaId)}
+                      onValueChange={(value) => {
+                        const selectedEmpresaId = parseInt(value) || 0;
+                        // Filtrar cajas según la empresa seleccionada
+                        const filteredCajas = cajas.filter(caja => caja.empresaId === selectedEmpresaId);
+                        setCajas(filteredCajas);
+                        // Actualizar el estado del nuevo usuario
+                        setNewUser({ 
+                          ...newUser, 
+                          empresaId: selectedEmpresaId,
+                          caja_id: 0 // Resetear la caja seleccionada al cambiar de empresa
+                        });
+                      }}
+                      disabled={userRole === 'Administrador'} // Deshabilitar para administradores
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Seleccione una empresa" />
                       </SelectTrigger>
                       <SelectContent>
-                        {empresas.map((empresa) => (
-                          <SelectItem key={empresa.empresa_id} value={String(empresa.empresa_id)}>
-                            {empresa.empresa_nombre}
-                          </SelectItem>
-                        ))}
+                        {userRole === 'Owner' ? (
+                          empresas.map((empresa) => (
+                            <SelectItem key={empresa.id} value={String(empresa.id)}>
+                              {empresa.nombre}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          // Mostrar solo la empresa del administrador
+                          empresas
+                            .filter(emp => emp.id === empresaId)
+                            .map(empresa => (
+                              <SelectItem key={empresa.id} value={String(empresa.id)}>
+                                {empresa.nombre}
+                              </SelectItem>
+                            ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -991,7 +1100,12 @@ const Usuarios = () => {
 
                 {/* Caja */}
                 <div className="space-y-2">
-                  <Label htmlFor="caja">Caja asignada</Label>
+                  <div className="flex justify-between items-center">
+                    <Label htmlFor="caja">Caja asignada</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {cajas.length} cajas disponibles
+                    </span>
+                  </div>
                   <Select
                     value={newUser.caja_id ? String(newUser.caja_id) : ''}
                     onValueChange={(value) =>
@@ -999,16 +1113,25 @@ const Usuarios = () => {
                     }
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Sin asignar" />
+                      <SelectValue placeholder="Seleccione una caja" />
                     </SelectTrigger>
                     <SelectContent>
-                      {cajas.map((caja) => (
-                        <SelectItem key={caja.id} value={String(caja.id)}>
-                          {caja.nombre}
-                        </SelectItem>
-                      ))}
+                      {cajas.length > 0 ? (
+                        cajas.map((caja) => (
+                          <SelectItem key={caja.id} value={String(caja.id)}>
+                            {caja.nombre} (ID: {caja.id}, Empresa: {caja.empresaId})
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                          No hay cajas disponibles para esta empresa
+                        </div>
+                      )}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Empresa actual: {empresas.find(e => e.id === empresaId)?.nombre || 'No definida'}
+                  </p>
                 </div>
 
                 {/* Contraseña */}
@@ -1196,7 +1319,7 @@ const Usuarios = () => {
                     </div>
 
                     <div className="bg-muted/30 px-5 py-3 flex justify-end space-x-2">
-                      {canEdit() && (
+                      {canEdit() && usuario.usuario_cargo !== 'Owner' && (
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -1217,7 +1340,7 @@ const Usuarios = () => {
                         </TooltipProvider>
                       )}
 
-                      {canDelete() && (
+                      {canDelete() && usuario.usuario_cargo !== 'Owner' && (
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -1276,7 +1399,7 @@ const Usuarios = () => {
               actions={canEdit() && (
                 <Button onClick={handleAddUsuario}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Nuevo Cliente
+                  Nuevo Usuario
                 </Button>
               )}
               onEdit={canEdit() ? handleEdit : undefined}

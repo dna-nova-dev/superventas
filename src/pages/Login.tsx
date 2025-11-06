@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usuarioService } from "@/services/usuarioService";
-import { AuthService } from "@/services/auth.service"; // Import AuthService
-import { useAuth } from "@/contexts/AuthContext";
-import { Eye, EyeOff, Info, ArrowRight, UserPlus, Sun, Moon } from "lucide-react";
+import { AuthService } from "@/services/auth.service";
+import { useAuth } from "@/hooks/useAuth";
+import { Eye, EyeOff, Sun, Moon, ArrowRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,78 +17,25 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { AnimatePresence, motion } from "framer-motion";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getEmpresaByEmpleadoId, getEmpresaByUsuarioId } from "@/services/empresaService";
+import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 const Login = () => {
-  const [username, setUsername] = useState(""); 
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState("");
-  const [isRegistering, setIsRegistering] = useState(false);
+  const [loginProgress, setLoginProgress] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  
   const { toast } = useToast();
   const navigate = useNavigate();
   const { setUser, setEmpresa, setEmpresaId } = useAuth();
   const { theme, toggleTheme } = useTheme();
-
-  const [registerEmail, setRegisterEmail] = useState("");
-  const [registerPassword, setRegisterPassword] = useState("");
-  const [registerCompanyName, setRegisterCompanyName] = useState("");
-  const [registerContactName, setRegisterContactName] = useState("");
-  const [registerPhone, setRegisterPhone] = useState("");
-  const [passwordStrength, setPasswordStrength] = useState(0);
-  const [termsAccepted, setTermsAccepted] = useState(false);
-  const [registerCountryCode, setRegisterCountryCode] = useState("+51");
-  const [passwordTouched, setPasswordTouched] = useState(false);
-  const [isFormComplete, setIsFormComplete] = useState(false);
-  const [loginProgress, setLoginProgress] = useState(0);
-  const [isTransitioning, setIsTransitioning] = useState(false);
-
-  useEffect(() => {
-    const calculatePasswordStrength = () => {
-      const password = registerPassword;
-      let strength = 0;
-
-      if (password.length >= 8) strength += 25;
-      if (/[A-Z]/.test(password)) strength += 25;
-      if (/[a-z]/.test(password)) strength += 25;
-      if (/[0-9]/.test(password) || /[^a-zA-Z0-9]/.test(password)) strength += 25;
-
-      setPasswordStrength(strength);
-    };
-
-    calculatePasswordStrength();
-  }, [registerPassword]);
-
-  useEffect(() => {
-    const checkFormComplete = () => {
-      setIsFormComplete(
-        registerCompanyName !== "" &&
-          registerContactName !== "" &&
-          registerEmail !== "" &&
-          registerPhone !== "" &&
-          registerPassword !== "" &&
-          passwordStrength === 100
-      );
-    };
-
-    checkFormComplete();
-  }, [registerPassword, registerCompanyName, registerContactName, registerEmail, registerPhone, passwordStrength]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -110,31 +57,74 @@ const Login = () => {
       AuthService.setToken(data.access_token); 
       
       setUser(data.user);
-      console.log("Usuario:", data.user);
-      if (data.user.cargo === "Administrador" ) {
-        const empresa = await getEmpresaByUsuarioId(data.user.id); 
-        setEmpresa(empresa);
-      }
-      if (data.user.cargo === "Encargado" || data.user.cargo === "Cajero") {
-        const empresa = await getEmpresaByEmpleadoId(data.user.id);
-        console.log("Empresa de empleado:", empresa);
-        setEmpresa(empresa); 
+      console.log("Datos del usuario al iniciar sesión:", data.user);
+      
+      // Manejar la lógica de empresa según el tipo de usuario
+      try {
+        if (data.user.cargo === "Administrador") {
+          const empresa = await getEmpresaByUsuarioId(data.user.id);
+          if (empresa) {
+            setEmpresa(empresa);
+          }
+        } else if (data.user.cargo === "Encargado" || data.user.cargo === "Cajero") {
+          const empresa = await getEmpresaByEmpleadoId(data.user.id);
+          console.log("Empresa de empleado:", empresa);
+          if (empresa) {
+            setEmpresa(empresa);
+          }
+        }
+        // No hacemos nada para el rol Owner ya que no necesita empresa
+      } catch (error) {
+        console.warn("Error al obtener datos de la empresa:", error);
+        // Continuamos sin fallar, ya que no todos los roles necesitan empresa
       }
       
+      // Verificar si el usuario es Owner
+      const isOwner = data.user.cargo === 'Owner';
+      
+      // Si es Owner, forzar hasChangedPassword a true para evitar el diálogo
+      if (isOwner) {
+        data.user.hasChangedPassword = true;
+      }
+      
+      // Verificar si el usuario necesita cambiar su contraseña
+      const needsPasswordChange = data.user.hasChangedPassword === false || 
+                                data.user.hasChangedPassword === undefined;
+      
+      console.log('Estado de cambio de contraseña requerido:', {
+        needsPasswordChange,
+        hasChangedPassword: data.user.hasChangedPassword,
+        isOwner,
+        userRole: data.user.cargo,
+        userData: data.user
+      });
+      
+      if (needsPasswordChange) {
+        console.log('Mostrando diálogo de cambio de contraseña');
+        setShowChangePassword(true);
+        setLoading(false);
+        return;
+      }
+      
+      // Si llegamos aquí, el usuario no necesita cambiar la contraseña
+      console.log('Inicio de sesión exitoso, redirigiendo...');
       toast({
         variant: "default",
         title: "Bienvenido",
         description: `Inicio de sesión exitoso, ${data.user.nombre}`, 
       });
+      
       setIsTransitioning(true);
       setTimeout(() => {
         navigate("/");
       }, 1000);
+      
     } catch (error) {
+      console.error('Error en el inicio de sesión:', error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: error instanceof Error ? error.message : "Credenciales inválidas",
+        description: error instanceof Error ? error.message : "Error al iniciar sesión. Intente nuevamente.",
       });
     } finally {
       setLoading(false);
@@ -151,47 +141,7 @@ const Login = () => {
     setRecoveryEmail("");
   };
 
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      if (!termsAccepted) {
-        toast({
-          variant: "destructive",
-          title: "Error de registro",
-          description: "Debes aceptar los términos y condiciones para registrarte.",
-        });
-        setLoading(false);
-        return;
-      }
-      toast({
-        title: "Registro exitoso",
-        description: `¡Bienvenido, ${registerCompanyName}! Ahora puedes iniciar sesión.`,
-      });
-      setIsRegistering(false);
-      setLoading(false);
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error de registro",
-        description: error instanceof Error ? error.message : "No se pudo completar el registro.",
-      });
-      setLoading(false);
-    }
-  };
-
   const currentYear = new Date().getFullYear();
-
-  const countryCodes = [
-    { label: "Perú", code: "+51" },
-    { label: "Mexico", code: "+52" },
-    { label: "Guatemala", code: "+502" },
-  ];
-
-  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setRegisterPassword(e.target.value);
-    setPasswordTouched(true);
-  };
 
   return (
     <div className="flex min-h-screen">
@@ -239,219 +189,66 @@ const Login = () => {
               <div>
                 <h2 className="text-xl font-bold">¡Hola! 👋</h2>
                 <p className="text-sm text-gray-600">
-                  {isRegistering
-                    ? "Crea una cuenta para empezar a usar Super Ventas."
-                    : "Accede para potenciar tus ventas y administrar tu negocio con facilidad."}
+                  Accede para potenciar tus ventas y administrar tu negocio con facilidad.
                 </p>
               </div>
 
               {/* Login Form */}
-              {!isRegistering ? (
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div>
-                    <Input
-                      id="username" // Changed id
-                      type="text" // Changed type
-                      value={username} // Changed value
-                      onChange={(e) => setUsername(e.target.value)} // Changed handler
-                      placeholder="Nombre de usuario" // Changed placeholder
-                      required
-                    />
-                  </div>
-                  <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Contraseña"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-3 flex items-center text-gray-500 dark:text-gray-400"
-                    >
-                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                    </button>
-                  </div>
-                  <div className="text-right">
-                    <button
-                      type="button"
-                      onClick={() => setIsRecoveryOpen(true)}
-                      className="text-sm text-blue-600 hover:underline"
-                    >
-                      ¿Olvidaste tu contraseña?
-                    </button>
-                  </div>
-                  <Button className="w-full" type="submit" disabled={loading}>
-                    {loading ? "Ingresando..." : (
-                      <>
-                        Iniciar Sesión
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
-                  <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-                    ¿No tienes una cuenta?{" "}
-                    <button
-                      type="button"
-                      onClick={() => setIsRegistering(true)}
-                      className="text-blue-600 hover:underline"
-                    >
-                      Regístrate aquí
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <form onSubmit={handleRegisterSubmit} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Input
-                        id="register-company-name"
-                        type="text"
-                        value={registerCompanyName}
-                        onChange={(e) => setRegisterCompanyName(e.target.value)}
-                        placeholder="Nombre de la empresa"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Input
-                        id="register-contact-name"
-                        type="text"
-                        value={registerContactName}
-                        onChange={(e) => setRegisterContactName(e.target.value)}
-                        placeholder="Nombre del contacto"
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Input
-                      id="register-email"
-                      type="email"
-                      value={registerEmail}
-                      onChange={(e) => setRegisterEmail(e.target.value)}
-                      placeholder="Correo electrónico"
-                      required
-                    />
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Select
-                      value={registerCountryCode}
-                      onValueChange={setRegisterCountryCode}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Lada" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {countryCodes.map((country) => (
-                          <SelectItem key={country.code} value={country.code}>
-                            {country.label} ({country.code})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      id="register-phone"
-                      type="tel"
-                      value={registerPhone}
-                      onChange={(e) => setRegisterPhone(e.target.value)}
-                      placeholder="Teléfono"
-                      required
-                    />
-                  </div>
-                  <div className="relative">
-                    <Input
-                      id="register-password"
-                      type={showPassword ? "text" : "password"}
-                      value={registerPassword}
-                      onChange={handlePasswordChange}
-                      placeholder="Contraseña"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-3 flex items-center text-gray-500 dark:text-gray-400"
-                    >
-                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                    </button>
-                  </div>
-                  {passwordTouched && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="password-strength">Fortaleza de la contraseña</Label>
-                        <Popover>
-                          <PopoverTrigger>
-                            <button
-                              type="button"
-                              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                            >
-                              <Info className="h-4 w-4" />
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-64">
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium">La contraseña debe cumplir con los siguientes requisitos:</p>
-                              <ul className="list-disc pl-5 text-sm">
-                                <li>Tener al menos 8 caracteres</li>
-                                <li>Incluir al menos una letra mayúscula</li>
-                                <li>Incluir al menos una letra minúscula</li>
-                                <li>Incluir al menos un número o carácter especial</li>
-                              </ul>
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                      <Progress id="password-strength" value={passwordStrength} className="h-2" />
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {passwordStrength < 50
-                          ? "Contraseña débil"
-                          : passwordStrength < 80
-                          ? "Contraseña moderada"
-                          : "Contraseña fuerte"}
-                      </p>
-                    </div>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div>
+                  <Input
+                    id="username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Nombre de usuario"
+                    required
+                  />
+                </div>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Contraseña"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-3 flex items-center text-gray-500 dark:text-gray-400"
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
+                <div className="text-right">
+                  <button
+                    type="button"
+                    onClick={() => setIsRecoveryOpen(true)}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                </div>
+                <Button className="w-full" type="submit" disabled={loading}>
+                  {loading ? "Ingresando..." : (
+                    <>
+                      Iniciar Sesión
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </>
                   )}
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="terms"
-                        checked={termsAccepted}
-                        onCheckedChange={(checked) => setTermsAccepted(!!checked)}
-                        disabled={!isFormComplete}
-                      />
-                      <Label htmlFor="terms" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                        Acepto los <a href="#" className="text-blue-600 hover:underline">términos y condiciones</a>
-                      </Label>
-                    </div>
-                  </div>
-                  <Button className="w-full" type="submit" disabled={loading || !termsAccepted || !isFormComplete}>
-                    {loading ? "Registrando..." : (
-                      <>
-                        Registrar
-                        <UserPlus className="ml-2 h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
-                  <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-                    ¿Ya tienes una cuenta?{" "}
-                    <button
-                      type="button"
-                      onClick={() => setIsRegistering(false)}
-                      className="text-blue-600 hover:underline"
-                    >
-                      Inicia sesión
-                    </button>
-                  </div>
-                </form>
-              )}
+                </Button>
+                <div className="text-center">
+                  <p className="text-sm text-gray-600">
+                    No tienes una cuenta? <Link to="/register" className="text-blue-600 hover:underline">Regístrate</Link>
+                  </p>
+                </div>
+              </form>
 
               {/* Copyright Footer */}
               <div className="absolute bottom-0 left-0 w-full text-center text-sm text-gray-600 dark:text-gray-400 py-2">
-                <p>© {currentYear} Super Ventas. Todos los derechos reservados.</p>
+                <p> {currentYear} Super Ventas. Todos los derechos reservados.</p>
               </div>
             </div>
           </>
@@ -490,6 +287,17 @@ const Login = () => {
           </form>
         </DialogContent>
       </Dialog>
+      
+      <ChangePasswordDialog 
+        open={showChangePassword}
+        onOpenChange={setShowChangePassword}
+        onPasswordChanged={() => {
+          setIsTransitioning(true);
+          setTimeout(() => {
+            navigate("/");
+          }, 1000);
+        }}
+      />
     </div>
   );
 };

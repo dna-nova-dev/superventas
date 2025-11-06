@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import Layout from '@/components/layout/Layout';
@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataTable, DataTableActions } from '@/components/ui/DataTable';
 import {  formatCurrency, formatDate } from '@/data/mockData';
 import { Gasto } from '@/types';
+import { Caja } from '@/types/caja.interface';
 import { 
   Wallet, 
   CreditCard, 
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'; // Added DialogFooter, DialogClose
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -43,6 +44,7 @@ const gastoSchema = z.object({
   id: z.string().min(1, { message: 'Selecciona una caja' }), // Changed key to id, kept as string for form
 });
 
+
 type GastoFormValues = z.infer<typeof gastoSchema>; 
 
 type GastoDTO = Omit<Gasto, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>;
@@ -62,7 +64,9 @@ const itemVariants = {
   show: { opacity: 1, y: 0 }
 };
 
-const tableVariants = {
+import { Variants } from "framer-motion";
+
+const tableVariants: Variants = {
   hidden: { 
     opacity: 0,
     y: 20
@@ -72,7 +76,7 @@ const tableVariants = {
     y: 0,
     transition: {
       duration: 0.3,
-      ease: "easeOut"
+      ease: [0.16, 1, 0.3, 1] // cubic-bezier equivalent for easeOut
     }
   }
 };
@@ -90,29 +94,29 @@ const Gastos = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [gastoToDelete, setGastoToDelete] = useState<Gasto | null>(null);
   const [gastos, setGastos] = useState<Gasto[]>([]);
-  const [cajas, setCajas] = useState<any[]>([]);
+  const [cajas, setCajas] = useState<Caja[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        const [gastosData, cajasData] = await Promise.all([getGastos(), getAllCajas()]);
-        setGastos(gastosData);
-        setCajas(cajasData);
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "No se pudieron cargar los datos",
-          variant: "destructive",
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const fetchData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const [gastosData, cajasData] = await Promise.all([getGastos(), getAllCajas()]);
+      setGastos(gastosData);
+      setCajas(cajasData);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los datos",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
 
+  useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const deleteMutation = useMutation({
     mutationFn: deleteGasto,

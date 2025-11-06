@@ -2,6 +2,45 @@ import { Caja } from "./caja.interface";
 
 // Data Types for the sales system
 
+export type EstadoVenta = 'pendiente' | 'completada' | 'cancelada' | 'devuelta';
+
+export interface ProductoVentaPendiente {
+  id: number;
+  nombre: string;
+  cantidad: number;
+  precioVenta: string;
+  total: string;
+  descripcion?: string;
+}
+
+export interface VentaPendiente {
+  usuarioId: number;
+  empresaId: number;
+  id: number;
+  productos: ProductoVentaPendiente[]; // JSON string with products information
+  clienteId: number; // Foreign key to Cliente
+  clienteName: string; // Client's name
+  total: string; // Total amount as decimal string (e.g., "1000.00")
+  nombreVendedor: string; // Salesperson's name
+  estado: string; // Status (e.g., "pendiente", "vendido")
+  fecha: string; // Date string (YYYY-MM-DD)
+  createdAt: string; // Creation timestamp (ISO string)
+  updatedAt: string; // Last update timestamp (ISO string)
+  // Optional fields that might be populated by the frontend
+  cliente?: Cliente;
+  productosData?: ProductoVentaPendiente[]; // Parsed productos JSON
+}
+
+export interface CreateVentaPendiente {
+  productos: ProductoVentaPendiente[]; // JSON string with products information
+  clienteId: number; // Client ID (required)
+  clienteName: string; // Client name (required)
+  total: string; // Total amount as decimal string (e.g., "1000.00") (required)
+  nombreVendedor: string; // Salesperson name (required)
+  estado: string; // Status (e.g., "pendiente") (required)
+  fecha: string; // Date in format "YYYY-MM-DD" (required)
+}
+
 export interface Categoria {
   id: number;
   empresaId: number;
@@ -86,19 +125,32 @@ export interface Producto {
 }
 
 export interface Usuario {
-  usuario_id: number;
+  id: number;
   empresaId: number;
-  usuario_nombre: string;
-  usuario_apellido: string;
-  usuario_email: string;
-  usuario_usuario: string;
-  usuario_clave: string;
-  usuario_cargo: string;
-  usuario_foto: string;
-  caja_id: number;
-  usuario_creado: string;
-  usuario_actualizado: string;
-  usuario_eliminado: string | null;
+  nombre: string;
+  apellido: string;
+  email: string;
+  usuario: string;
+  clave: string;
+  cargo: string;
+  foto: string;
+  cajaId: number;
+  estado: string;
+  hasChangedPassword: boolean;
+  // Backwards compatibility
+  usuario_id?: number;
+  usuario_nombre?: string;
+  usuario_apellido?: string;
+  usuario_email?: string;
+  usuario_usuario?: string;
+  usuario_clave?: string;
+  usuario_cargo?: string;
+  usuario_foto?: string;
+  caja_id?: number;
+  usuario_creado?: string;
+  usuario_actualizado?: string;
+  usuario_eliminado?: string | null;
+  has_changed_password?: boolean;
 }
 
 export interface Venta {
@@ -116,9 +168,14 @@ export interface Venta {
   usuarioId: number;
   clienteId: number;
   cajaId: number;
+  estado: EstadoVenta;
   detalles: VentaDetalle[];
+  // Relations
+  cliente?: Cliente;
+  usuario?: Usuario;
 }
-export interface CreateVenta {
+
+export interface CreateVenta extends Record<string, unknown> {
   codigo: string;
   empresaId: number;
   fecha: string;
@@ -130,6 +187,7 @@ export interface CreateVenta {
   clienteId: number;
   cajaId: number;
   detalles: CreateVentaDetalle[];
+  estado?: string; // Agregado para soportar ventas pendientes
 }
 
 export interface VentaDetalle {
@@ -154,6 +212,7 @@ export interface CreateVentaDetalle {
   descripcion: string;
   ventaCodigo: string;
   productoId: number;
+  empresaId?: number; // Agregado para mantener consistencia con el modelo
 }
 
 export interface Gasto {
@@ -213,11 +272,13 @@ export interface CompraDetalle {
   compraCodigo: string;
 }
 export interface CreateCompraDetalle {
+  [key: string]: unknown;
   cantidad: number;
   precioCompra: string;
   total: string;
-  compraCodigo: string;
+  descripcion: string;
   productoId: number;
+  empresaId: number;
 }
 
 export interface AppData {

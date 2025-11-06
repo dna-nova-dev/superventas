@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Layout } from '@/components/layout/Layout';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { getImageSrc } from '@/utils/imageUtils';
 import { useToast } from '@/hooks/use-toast';
 import { 

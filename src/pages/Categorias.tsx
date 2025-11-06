@@ -1,7 +1,7 @@
 import { getAllProductos } from "../services/productoService";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Layout } from '@/components/layout/Layout';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { DataTable, DataTableActions } from '@/components/ui/DataTable';
 import { useToast } from '@/hooks/use-toast';
 import { Tag, MapPin, Plus, Search, PenSquare, XSquare } from 'lucide-react';
@@ -34,22 +34,35 @@ const useMediaQuery = (query: string) => {
   return matches;
 };
 
-const containerVariants = {
+// Importar tipos de Framer Motion
+import type { Variants } from 'framer-motion';
+
+// Definir las variantes de animación
+const containerVariants: Variants = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.1
+      staggerChildren: 0.1,
+      duration: 0.3,
+      ease: [0.16, 1, 0.3, 1] as const
     }
   }
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0 }
+  show: { 
+    opacity: 1, 
+    y: 0,
+    transition: {
+      duration: 0.3,
+      ease: [0.16, 1, 0.3, 1] as const
+    }
+  }
 };
 
-const tableVariants = {
+const tableVariants: Variants = {
   hidden: { 
     opacity: 0,
     y: 20
@@ -59,7 +72,7 @@ const tableVariants = {
     y: 0,
     transition: {
       duration: 0.3,
-      ease: "easeOut"
+      ease: [0.16, 1, 0.3, 1] as const
     }
   }
 };
@@ -67,7 +80,7 @@ const tableVariants = {
 const Categorias = () => {
   const { toast } = useToast();
   const { getViewMode, canEdit, canDelete } = useRolePermissions();
-  const { empresaId } = useAuth();
+  const { empresaId, user } = useAuth();
   const viewMode = getViewMode();
   const [searchQuery, setSearchQuery] = useState('');
   const [openDialog, setOpenDialog] = useState(false);
@@ -81,20 +94,34 @@ const Categorias = () => {
   const [selectedCategoryName, setSelectedCategoryName] = useState<string>('');
   const isMobile = useMediaQuery("(max-width: 768px)");
 
-  useEffect(() => {
-    loadCategorias();
-    loadProductos();
-  }, []);
+  const loadCategorias = useCallback(async () => {
+    try {
+      // Pasar el empresaId directamente a getAllCategorias para filtrar en el servidor
+      const data = await getAllCategorias(empresaId);
+      setCategorias(data);
+    } catch (error) {
+      console.error('Error al cargar categorías:', error);
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las categorías",
+        variant: "destructive"
+      });
+    }
+  }, [empresaId, toast]);
 
-  const loadCategorias = async () => {
-    const data = await getAllCategorias();
-    const filtered = data.filter(c => c.empresaId === empresaId);
-    setCategorias(filtered);
-  };
-  const loadProductos = async () => {
+  const loadProductos = useCallback(async () => {
     const data = await getAllProductos();
     setProductos(data);
-  };
+  }, []);
+
+  const loadAllData = useCallback(async () => {
+    await loadCategorias();
+    await loadProductos();
+  }, [loadCategorias, loadProductos]);
+
+  useEffect(() => {
+    loadAllData();
+  }, [loadAllData]);
 
   const handleRowClick = (categoria: Categoria) => {
     const filteredProducts = productos.filter(p => p.categoriaId === categoria.id);
@@ -144,14 +171,22 @@ const Categorias = () => {
   const handleSubmitCategoria = async (data: { nombre: string; ubicacion: string }) => {
     try {
       if (dialogMode === 'create') {
+        // Asegurarse de que tenemos un empresaId válido
+        const currentEmpresaId = empresaId || user?.empresaId;
+        
+        if (!currentEmpresaId) {
+          throw new Error('No se pudo determinar la empresa para la categoría');
+        }
+
         const newCategoria = await createCategoria({
           nombre: data.nombre,
           ubicacion: data.ubicacion,
-          empresaId: empresaId,
+          empresaId: currentEmpresaId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           deletedAt: null
         });
+        
         toast({
           title: "Categoría creada",
           description: `Se ha creado la categoría ${newCategoria.nombre}`

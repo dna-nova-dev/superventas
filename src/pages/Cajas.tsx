@@ -30,7 +30,7 @@ import {
   updateCaja,
   deleteCaja,
 } from "@/services/cajaService";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { getAllEmpresas } from "@/services/empresaService";
 import {
   Dialog,
@@ -69,40 +69,47 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 
-const containerVariants = {
+import type { Variants } from 'framer-motion';
+
+const containerVariants: Variants = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
     transition: {
       staggerChildren: 0.1,
-    },
-  },
+      when: "beforeChildren"
+    }
+  }
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0 },
-};
-
-const tableVariants = {
-  hidden: {
-    opacity: 0,
-    y: 20,
-  },
-  show: {
-    opacity: 1,
+  show: { 
+    opacity: 1, 
     y: 0,
     transition: {
-      duration: 0.3,
-      ease: "easeOut",
-    },
-  },
+      ease: [0.16, 1, 0.3, 1],
+      duration: 0.3
+    }
+  }
+};
+
+const tableVariants: Variants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { 
+    opacity: 1, 
+    y: 0,
+    transition: {
+      ease: [0.16, 1, 0.3, 1],
+      duration: 0.3
+    }
+  }
 };
 
 const Cajas = () => {
   const { toast } = useToast();
   const { getViewMode, canEdit, canManageCajas } = useRolePermissions();
-  const { empresaId } = useAuth();
+  const { empresaId, user } = useAuth();
   const viewMode = getViewMode();
   const [isCreating, setIsCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -111,7 +118,7 @@ const Cajas = () => {
     numero: 1,
     nombre: "Caja #1",
     efectivo: "0.00",
-    empresaId: empresaId ?? 0,
+    empresaId: user?.empresaId || empresaId || 0,
   });
   const [editingCaja, setEditingCaja] = useState<Caja | null>(null);
   const [deletingCaja, setDeletingCaja] = useState<Caja | null>(null);
@@ -124,6 +131,24 @@ const Cajas = () => {
     empresaId: empresaId ?? 0,
   });
   const isDesktop = useMediaQuery("(min-width: 768px)");
+
+  useEffect(() => {
+    const fetchCajas = async () => {
+      try {
+        const data = await getAllCajas(empresaId || undefined);
+        setCajas(data);
+      } catch (error) {
+        console.error("Error al cargar las cajas:", error);
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar las cajas",
+          variant: "destructive",
+        });
+      }
+    };
+
+    fetchCajas();
+  }, [empresaId, toast]);
 
   useEffect(() => {
     const loadEmpresas = async () => {
@@ -170,7 +195,7 @@ const Cajas = () => {
       }
     };
     loadCajas();
-  }, []);
+  }, [empresaId, toast]);
 
   const handleRowClick = (caja: Caja) => {
     toast({
@@ -273,12 +298,11 @@ const Cajas = () => {
     if (!newCajaForm) return;
 
     try {
-      const randomName = uuidv4();
       const createdCaja = await createCaja({
         numero: newCajaForm.numero,
-        nombre: randomName,
+        nombre: newCajaForm.nombre || `Caja #${newCajaForm.numero}`, // Usar el nombre del formulario o un valor por defecto
         efectivo: newCajaForm.efectivo,
-        empresaId: newCajaForm.empresaId,
+        empresaId: user?.empresaId || empresaId || 0, // Use the admin's company ID
       });
 
       setCajas([...cajas, createdCaja]);
@@ -292,7 +316,7 @@ const Cajas = () => {
         numero: nextNumber,
         nombre: `Caja #${nextNumber}`,
         efectivo: "0.00",
-        empresaId: empresaId ?? 0,
+        empresaId: user?.empresaId || empresaId || 0, // Use the admin's company ID
       });
     } catch (error) {
       toast({

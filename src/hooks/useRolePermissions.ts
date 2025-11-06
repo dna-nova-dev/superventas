@@ -1,4 +1,4 @@
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from './useAuth';
 
 export type ViewMode = 'cards' | 'table' | 'list';
 

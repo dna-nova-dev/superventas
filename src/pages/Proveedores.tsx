@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { DataTable, DataTableActions } from "@/components/ui/DataTable";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Users,
   User,
@@ -23,7 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useRolePermissions } from "@/hooks/useRolePermissions";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Variants } from "framer-motion";
 import {
   Dialog,
   DialogContent,
@@ -77,7 +77,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-const tableVariants = {
+const tableVariants: Variants = {
   hidden: {
     opacity: 0,
     y: 20,
@@ -87,7 +87,7 @@ const tableVariants = {
     y: 0,
     transition: {
       duration: 0.3,
-      ease: "easeOut",
+      ease: [0.4, 0, 0.2, 1], // Using cubic-bezier values instead of string
     },
   },
 };
@@ -402,11 +402,7 @@ const Proveedores = () => {
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const isMobile = useIsMobile();
 
-  useEffect(() => {
-    loadProveedores();
-  }, []);
-
-  const loadProveedores = async () => {
+  const loadProveedores = useCallback(async () => {
     try {
       const data = await getAllProveedores();
       const filtered = empresaId
@@ -419,10 +415,12 @@ const Proveedores = () => {
         description: "No se pudieron cargar los proveedores",
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
     }
-  };
+  }, [empresaId, toast]);
+
+  useEffect(() => {
+    loadProveedores();
+  }, [loadProveedores]);
 
   const resetForm = () => {
     setFormData({

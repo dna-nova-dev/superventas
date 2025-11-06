@@ -1,48 +1,87 @@
-import { Layout } from "@/components/layout/Layout";
-import { motion } from "framer-motion";
-import { Truck } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { formatCurrency } from "@/data/mockData";
+import { motion, Variants } from "framer-motion";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import { jsPDF } from "jspdf";
+import { 
+  Truck, 
+  ShoppingBag, 
+  Receipt, 
+  Printer, 
+  Trash, 
+  Plus, 
+  Search, 
+  CalendarIcon, 
+  X 
+} from "lucide-react";
+
+// Components
+import { Layout } from "@/components/layout/Layout";
 import { DataTable } from "@/components/ui/DataTable";
-import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  ShoppingBag,
-  Receipt,
-  Printer,
-  Trash,
-  Plus,
-  Search,
-} from "lucide-react";
-import { CalendarIcon, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+
+// Hooks
+import { useToast } from "@/hooks/use-toast";
 import { useRolePermissions } from "@/hooks/useRolePermissions";
-import { useState, useEffect, useCallback } from "react";
-import type { Proveedor } from "@/types";
-import type { Compra, CompraDetalle } from "@/types";
-import type { Usuario } from "@/types";
+import { useAuth } from "@/hooks/useAuth";
+
+// Services
 import { usuarioService } from "@/services/usuarioService";
-import { useAuth } from "@/contexts/AuthContext";
-import {
-  getCompras,
-  deleteCompra as deleteCompraService,
-} from "@/services/compraService";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
-import { jsPDF } from "jspdf";
+import { getCompras, deleteCompra as deleteCompraService } from "@/services/compraService";
 import { getAllProveedores } from "@/services/proveedorService";
 import { getCompraDetalleByCodigo } from "@/services/compraDetalleService";
+import { getProductoById } from "@/services/productoService";
+
+// Types
+import type { Proveedor, Compra, CompraDetalle, Usuario, Producto } from "@/types";
+
+// Extended type with producto information
+interface CompraDetalleWithProduct extends CompraDetalle {
+  producto?: {
+    id: number;
+    nombre: string;
+    codigo: string;
+  } | null;
+}
+
+// Utils
+import { formatCurrency } from "@/data/mockData";
+
+interface DetalleConProducto extends Omit<CompraDetalle, 'productoId'> {
+  productoId: number;
+  producto?: {
+    id: number;
+    nombre: string;
+    codigo?: string;
+  } | null;
+}
+
+type SelectedCompraDetails = {
+  compra: Compra;
+  detalles: DetalleConProducto[];
+  proveedor?: Proveedor | null;
+  usuario?: Usuario | null;
+  cliente?: { id: number; nombre: string } | null;
+};
 
 type DateRangeType = {
   from: Date | undefined;
@@ -50,13 +89,14 @@ type DateRangeType = {
 };
 
 const Compras = () => {
+  // Hooks and state
   const { toast } = useToast();
   const { empresaId } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
-  const [selectedCompraDetails, setSelectedCompraDetails] = useState<any>(null);
+  const [selectedCompraDetails, setSelectedCompraDetails] = useState<SelectedCompraDetails | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [compras, setCompras] = useState<Compra[]>([]);
   const [deleteCompra, setDeleteCompra] = useState<Compra | null>(null);
@@ -67,12 +107,11 @@ const Compras = () => {
     from: undefined,
     to: undefined,
   });
-  const [dateFilter, setDateFilter] = useState<"all" | "today" | "custom">(
-    "all"
-  );
+  const [dateFilter, setDateFilter] = useState<"all" | "today" | "custom">("all");
   const { getViewMode, canEdit, canDelete } = useRolePermissions();
   const viewMode = getViewMode();
 
+  // Animation variants
   const containerVariants = {
     hidden: { opacity: 0 },
     show: {
@@ -88,7 +127,7 @@ const Compras = () => {
     show: { opacity: 1, y: 0 },
   };
 
-  const tableVariants = {
+  const tableVariants: Variants = {
     hidden: {
       opacity: 0,
       y: 20,
@@ -98,19 +137,13 @@ const Compras = () => {
       y: 0,
       transition: {
         duration: 0.3,
-        ease: "easeOut",
+        ease: [0.4, 0, 0.2, 1], // Using cubic-bezier values instead of string
       },
     },
   };
 
-  useEffect(() => {
-    const init = async () => {
-      await Promise.all([loadCompras(), loadUsuarios(), loadProveedores()]);
-    };
-    init();
-  }, []);
-
-  const loadUsuarios = async () => {
+  // Memoized data loading functions
+  const loadUsuarios = useCallback(async () => {
     try {
       const data = await usuarioService.getAllUsuarios();
       setUsuarios(data);
@@ -121,20 +154,70 @@ const Compras = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [toast]);
 
-  const loadProveedores = async () => {
+  const loadProveedores = useCallback(async () => {
     try {
       const data = await getAllProveedores();
       setProveedores(data);
     } catch (error) {
       toast({
         title: "Error",
-        description: "No se pudieron cargar los clientes",
+        description: "No se pudieron cargar los proveedores",
         variant: "destructive",
       });
     }
-  };
+  }, [toast]);
+
+  const loadCompras = useCallback(async () => {
+    try {
+      const data = await getCompras();
+      setCompras(data);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las compras",
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
+
+  const loadData = useCallback(async () => {
+    await Promise.all([
+      loadCompras(),
+      loadUsuarios(),
+      loadProveedores()
+    ]);
+  }, [loadCompras, loadUsuarios, loadProveedores]);
+
+  // Load purchase details
+  const loadDetalles = useCallback(async () => {
+    try {
+      const allDetalles = await Promise.all(
+        compras.map(compra => getCompraDetalleByCodigo(compra.codigo))
+      );
+      setDetalles(allDetalles.flat());
+    } catch (error) {
+      console.error('Error loading purchase details:', error);
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los detalles de las compras",
+        variant: "destructive",
+      });
+    }
+  }, [compras, toast]);
+
+  // Initial data load
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Load details when compras changes
+  useEffect(() => {
+    if (compras.length > 0) {
+      loadDetalles();
+    }
+  }, [compras, loadDetalles]);
 
   const getProveedorById = (id: number) => {
     return proveedores.find((c) => c.id === id);
@@ -142,25 +225,6 @@ const Compras = () => {
 
   const getUsuarioById = (id: number) => {
     return usuarios.find((u) => u.usuario_id === id);
-  };
-
-  const loadCompras = async () => {
-    try {
-      setLoading(true);
-      const allCompras = await getCompras();
-      const filteredCompras = allCompras.filter(
-        (v) => v.empresaId === empresaId
-      );
-      setCompras(filteredCompras);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar las ventas",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
   };
 
   const isToday = (dateString: string) => {
@@ -183,16 +247,19 @@ const Compras = () => {
   };
 
   const isInDateRange = (dateString: string) => {
-    if (!dateRange.from) return true;
+    if (!dateRange || !dateRange.from) return true;
 
     const date = new Date(dateString);
+    const from = new Date(dateRange.from);
+    const to = dateRange.to ? new Date(dateRange.to) : null;
 
-    if (dateRange.from && !dateRange.to) {
-      return date >= dateRange.from;
-    }
-
-    if (dateRange.from && dateRange.to) {
-      return date >= dateRange.from && date <= dateRange.to;
+    if (from && !to) {
+      return date >= from;
+    } else if (from && to) {
+      // Set time to end of day for the 'to' date
+      const endOfDay = new Date(to);
+      endOfDay.setHours(23, 59, 59, 999);
+      return date >= from && date <= endOfDay;
     }
 
     return true;
@@ -260,22 +327,44 @@ const Compras = () => {
     return true;
   });
 
-  const handleView = async (compra: Compra) => {
+  const handleRowClick = async (compra: Compra) => {
     try {
-      const detallesFiltrados = detalles.filter(
-        (d) => d.compraCodigo === compra.codigo
-      );
+      // Load the latest details for this specific purchase
+      const detallesFiltrados = await getCompraDetalleByCodigo(compra.codigo);
+      
+      // Load product information for each detail
+      const detallesConProductos = await Promise.all(detallesFiltrados.map(async (detalle) => {
+        try {
+          const producto = await getProductoById(detalle.productoId);
+          return {
+            ...detalle,
+            producto: producto ? {
+              id: producto.id,
+              nombre: producto.nombre,
+              codigo: producto.codigo
+            } : null
+          };
+        } catch (error) {
+          console.error('Error loading product:', error);
+          return {
+            ...detalle,
+            producto: null
+          };
+        }
+      }));
+      
       setSelectedCompraDetails({
         compra,
-        detalles: detallesFiltrados,
+        detalles: detallesConProductos,
         proveedor: getProveedorById(compra.proveedorId),
         usuario: getUsuarioById(compra.usuarioId),
       });
       setShowDetails(true);
     } catch (error) {
+      console.error('Error in handleRowClick:', error);
       toast({
         title: "Error",
-        description: "Error al cargar detalles de venta",
+        description: "Error al cargar detalles de la compra",
         variant: "destructive",
       });
     }
@@ -286,26 +375,8 @@ const Compras = () => {
     setDateRange({ from: undefined, to: undefined });
   };
 
-  const handleRowClick = async (compra: Compra) => {
-    try {
-      const detallesFiltrados = detalles.filter(
-        (d) => d.compraCodigo === compra.codigo
-      );
-      setSelectedCompraDetails({
-        compra,
-        detalles: detallesFiltrados,
-        cliente: getProveedorById(compra.proveedorId),
-        usuario: getUsuarioById(compra.usuarioId),
-      });
-      setShowDetails(true);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Error al cargar detalles de venta",
-        variant: "destructive",
-      });
-    }
-  };
+  // Alias for handleRowClick to maintain compatibility
+  const handleView = handleRowClick;
 
   const generateTicket = async (compra: Compra) => {
     try {
@@ -313,117 +384,288 @@ const Compras = () => {
       const proveedor = getProveedorById(compra.proveedorId);
       const usuario = getUsuarioById(compra.usuarioId);
 
-      const lineHeight = 4;
-      const headerHeight = 60;
-      const productLineHeight = 5;
-      const productsHeight = ldetails.length * productLineHeight;
-      const footerHeight = 30;
-      const totalHeight = headerHeight + productsHeight + footerHeight;
+      // Tamaño de hoja A5 en orientación vertical (148.5 x 210 mm)
+      const pageWidth = 148.5;
+      const pageHeight = 210;
+      const marginX = 10;
+      const contentWidth = pageWidth - (marginX * 2);
+      const centerX = pageWidth / 2;
 
       const doc = new jsPDF({
-        unit: "mm",
-        format: [80, totalHeight],
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a5',
         compress: true,
       });
 
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const centerX = pageWidth / 2;
-      const marginX = 10;
-      const contentWidth = pageWidth - marginX * 2;
-
       // Header
-      let y = 10;
-      doc.setFontSize(14);
+      let y = 15; // Start position from top
+      
+      // Logo y encabezado
+      doc.setFontSize(16);
       doc.setFont("helvetica", "bold");
       doc.text("SUPERVENTAS", centerX, y, { align: "center" });
-
+      
+      // Subtítulo
+      y += 8;
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "normal");
+      doc.text("ORDEN DE COMPRA", centerX, y, { align: "center" });
+      
+      // Línea decorativa
       y += 5;
+      doc.setLineWidth(0.5);
+      doc.line(marginX, y, pageWidth - marginX, y);
+      y += 8;
+      
+      // Sección de información general
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("N° Orden:", marginX, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(compra.codigo, marginX + 20, y);
+      
+      y += 5;
+      doc.setFont("helvetica", "bold");
+      doc.text("Fecha:", marginX, y);
+      doc.setFont("helvetica", "normal");
+      const formattedDate = new Date(compra.fecha).toLocaleDateString('es-GT', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      doc.text(`${formattedDate} ${compra.hora}`, marginX + 20, y);
+      
+      // Información del proveedor
+      y += 10;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("INFORMACIÓN DEL PROVEEDOR", centerX, y, { align: "center" });
+      y += 6;
+      
+      // Marco para la información del proveedor
+      const supplierYStart = y;
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text("Nombre:", marginX + 5, y + 5);
+      doc.setFont("helvetica", "normal");
+      const supplierName = proveedor?.nombre || 'No especificado';
+      const supplierLines = doc.splitTextToSize(supplierName, contentWidth - 30);
+      doc.text(supplierLines, marginX + 25, y + 5);
+      
+      y += 5 + (supplierLines.length * 4);
+      
+      doc.setFont("helvetica", "bold");
+      doc.text("Documento:", marginX + 5, y + 5);
+      doc.setFont("helvetica", "normal");
+      doc.text(proveedor?.numeroDocumento || 'N/A', marginX + 35, y + 5);
+      
+      doc.setFont("helvetica", "bold");
+      doc.text("Teléfono:", marginX + 80, y + 5);
+      doc.setFont("helvetica", "normal");
+      doc.text(proveedor?.telefono || 'N/A', marginX + 100, y + 5);
+      
+      y += 10;
+      
+      // Dibujar el marco después de saber la altura
+      doc.rect(marginX, supplierYStart, contentWidth, y - supplierYStart);
+      
+      // Información del usuario que registra
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text("Registrado por:", marginX, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(usuario ? `${usuario.usuario_nombre} ${usuario.usuario_apellido}` : 'Usuario no disponible', marginX + 30, y);
+      
+      y += 5;
+
+      // Line separator - thicker and with more space
+      y += 3;
+      doc.setLineWidth(0.3);
+      doc.line(marginX, y, pageWidth - marginX, y);
+      y += 5; // More space after separator
+
+      // Encabezado de productos
+      y += 10;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text("DETALLE DE PRODUCTOS", centerX, y, { align: "center" });
+      y += 8;
+      
+      // Fondo para el encabezado de la tabla
+      const headerY = y;
+      doc.setFillColor(240, 240, 240);
+      doc.rect(marginX, y, contentWidth, 8, 'F');
+      
+      // Texto del encabezado
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      doc.text("CANT.", marginX + 5, y + 5);
+      doc.text("DESCRIPCIÓN", marginX + 25, y + 5);
+      doc.text("P. UNIT.", marginX + 100, y + 5, { align: "right" });
+      doc.text("TOTAL", marginX + 125, y + 5, { align: "right" });
+      
+      // Borde inferior del encabezado
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.3);
+      doc.line(marginX, y + 8, pageWidth - marginX, y + 8);
+      
+      y += 10; // Espacio después del encabezado
+
+      // Lista de productos
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      
+      // Guardar la posición Y inicial para el borde posterior
+      const productsStartY = y;
+      
+      for (const detalle of ldetails) {
+        // Obtener información del producto
+        let productName = `Producto ${detalle.productoId}`;
+        let productCode = '';
+        
+        try {
+          const producto = await getProductoById(detalle.productoId);
+          if (producto) {
+            productName = producto.nombre || productName;
+            productCode = producto.codigo || '';
+          }
+        } catch (error) {
+          console.error('Error al cargar el producto:', error);
+        }
+        
+        // Calcular espacio necesario para este producto
+        const availableWidth = 80; // Ancho para la descripción
+        const productLines = doc.splitTextToSize(`${productName}${productCode ? ' (' + productCode + ')' : ''}`, availableWidth);
+        const lineHeight = 5;
+        const productHeight = Math.max(8, productLines.length * lineHeight);
+        
+        // Verificar si necesitamos una nueva página
+        if (y + productHeight > pageHeight - 30) {
+          doc.addPage();
+          y = 20;
+          // Volver a dibujar el encabezado
+          doc.setFontSize(10);
+          doc.text("Continuación de la orden de compra", marginX, 15);
+          doc.setLineWidth(0.2);
+          doc.line(marginX, 18, pageWidth - marginX, 18);
+          y = 25;
+        }
+        
+        // Cantidad
+        doc.text(detalle.cantidad.toString(), marginX + 5, y + (productHeight / 2) + 2);
+        
+        // Nombre del producto y código
+        doc.text(productLines, marginX + 25, y + (productLines.length > 1 ? 0 : 3));
+        
+        // Precio unitario
+        doc.text(
+          formatCurrency(Number(detalle.precioCompra)), 
+          marginX + 105, 
+          y + (productHeight / 2) + 2, 
+          { align: "right" }
+        );
+        
+        // Total
+        doc.setFont("helvetica", "medium");
+        doc.text(
+          formatCurrency(Number(detalle.total)), 
+          marginX + 125, 
+          y + (productHeight / 2) + 2, 
+          { align: "right" }
+        );
+        doc.setFont("helvetica", "normal");
+        
+        // Línea divisoria
+        doc.setDrawColor(230, 230, 230);
+        doc.setLineWidth(0.1);
+        doc.line(marginX, y + productHeight + 1, pageWidth - marginX, y + productHeight + 1);
+        
+        y += productHeight + 2;
+      }
+      
+      // Dibujar el borde exterior de la tabla
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.3);
+      doc.rect(marginX, headerY, contentWidth, y - headerY);
+
+      // Sección de totales
+      y += 10;
+      
+      // Línea superior del recuadro de totales
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.3);
+      doc.line(pageWidth - marginX - 70, y, pageWidth - marginX, y);
+      
+      // Subtotal
+      y += 6;
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
-      doc.text("Ticket de Venta", centerX, y, { align: "center" });
-
-      // Info Section with dashed borders
+      doc.text("Subtotal:", pageWidth - marginX - 60, y, { align: "right" });
+      doc.text(formatCurrency(compra.total), pageWidth - marginX, y, { align: "right" });
+      
+      // Impuestos (si los hay)
+      y += 5;
+      doc.text("Impuestos:", pageWidth - marginX - 60, y, { align: "right" });
+      doc.text("Q 0.00", pageWidth - marginX, y, { align: "right" });
+      
+      // Total
       y += 8;
-      doc.setLineWidth(0.1);
-      doc.line(marginX, y, pageWidth - marginX, y);
-      y += 4;
-      doc.setFontSize(8);
-      const addInfoLine = (label: string, value: string) => {
-        doc.text(label, marginX, y);
-        doc.text(value, pageWidth - marginX, y, { align: "right" });
-        y += lineHeight;
-      };
-
-      addInfoLine("Código:", compra.codigo);
-      addInfoLine("Fecha:", new Date(compra.fecha).toLocaleDateString("es-GT"));
-      addInfoLine("Hora:", compra.hora);
-      addInfoLine(
-        "Proveedor:",
-        proveedor ? `${proveedor.nombre}` : "No encontrado"
-      );
-      addInfoLine(
-        "Comprador:",
-        usuario
-          ? `${usuario.usuario_nombre} ${usuario.usuario_apellido}`
-          : "No encontrado"
-      );
-
-      // Products section
-      y += 2;
-      doc.line(marginX, y, pageWidth - marginX, y);
-      y += 4;
       doc.setFont("helvetica", "bold");
-      doc.text("PRODUCTOS", centerX, y, { align: "center" });
-      y += 4;
-      doc.line(marginX, y, pageWidth - marginX, y);
-      y += 4;
-
-      // Products detail
-      doc.setFont("helvetica", "normal");
-      ldetails.forEach((detalle) => {
-        const cantidad = detalle.cantidad;
-        const precioCompra = Number.parseFloat(detalle.precioCompra);
-        const subtotal = cantidad * precioCompra;
-
-        // Product name
-
-        // Quantity and unit price
-        y += 3;
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(7);
-        doc.text(
-          `${cantidad} x ${formatCurrency(precioCompra)}`,
-          marginX + 2,
-          y
-        );
-        y += 4;
-      });
-
-      // Totals section
+      doc.setFontSize(12);
+      doc.text("TOTAL:", pageWidth - marginX - 60, y, { align: "right" });
+      doc.text(formatCurrency(compra.total), pageWidth - marginX, y, { align: "right" });
+      
+      // Línea inferior del recuadro de totales
       y += 2;
+      doc.setLineWidth(0.3);
+      doc.line(pageWidth - marginX - 70, y, pageWidth - marginX, y);
+      
+      // Pie de página
+      y = pageHeight - 20;
+      
+      // Línea separadora
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.2);
       doc.line(marginX, y, pageWidth - marginX, y);
-      y += 4;
-      doc.setFontSize(8);
-
-      const addTotalLine = (label: string, value: string, isBold = false) => {
-        if (isBold) doc.setFont("helvetica", "bold");
-        else doc.setFont("helvetica", "normal");
-        doc.text(label, pageWidth - 40, y);
-        doc.text(value, pageWidth - marginX, y, { align: "right" });
-        y += lineHeight;
-      };
-
-      addTotalLine("Total:", formatCurrency(compra.total), true);
-
-      // Footer
-      y += 4;
-      doc.setFontSize(7);
+      y += 3;
+      
+      // Texto del pie de página
       doc.setFont("helvetica", "normal");
-      doc.text("¡Gracias por su compra!", centerX, y, { align: "center" });
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      
+      // Información de la empresa
+      doc.text("SUPERVENTAS - Sistema de Gestión Comercial", centerX, y, { align: "center" });
+      y += 3.5;
+      
+      doc.setFontSize(7);
+      doc.text("Documento de uso interno - No válido como factura", centerX, y, { align: "center" });
+      y += 3.5;
+      
+      // Fecha de generación
+      doc.setFont("helvetica", "italic");
+      doc.text(
+        `Generado el ${new Date().toLocaleString('es-GT', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        })}`, 
+        centerX, 
+        y, 
+        { align: "center" }
+      );
+      
+      // Restaurar color de texto
+      doc.setTextColor(0, 0, 0);
 
       return doc;
     } catch (error) {
-      console.error("Error generating ticket:", error);
+      console.error("Error generating purchase receipt:", error);
       throw error;
     }
   };
@@ -431,16 +673,33 @@ const Compras = () => {
   const printTicket = async (compra: Compra) => {
     try {
       const doc = await generateTicket(compra);
-      window.open(doc.output("bloburl"), "_blank");
+      
+      // Create a blob URL for the PDF
+      const blob = doc.output('blob');
+      const url = URL.createObjectURL(blob);
+      
+      // Create a temporary anchor element to trigger the download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `compra-${compra.codigo}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
 
       toast({
         title: "Ticket generado",
-        description: `Ticket de venta ${compra.codigo} listo para imprimir`,
+        description: `Ticket de compra ${compra.codigo} se está descargando`,
       });
     } catch (error) {
+      console.error('Error generating ticket:', error);
       toast({
         title: "Error",
-        description: "Error al generar el ticket",
+        description: `Error al generar el ticket: ${error instanceof Error ? error.message : 'Error desconocido'}`,
         variant: "destructive",
       });
     }
@@ -747,6 +1006,162 @@ const Compras = () => {
           </motion.div>
         )}
       </motion.div>
+
+      <Dialog open={showDetails} onOpenChange={setShowDetails}>
+        {selectedCompraDetails && (
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto p-0">
+            <div className="p-6">
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-bold text-foreground mb-6">
+                  Detalles de la Compra
+                </DialogTitle>
+              </DialogHeader>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Left Column - Purchase and Supplier Info */}
+                <div className="space-y-6">
+                  {/* Purchase Info Card */}
+                  <div className="bg-card rounded-lg border p-5 shadow-sm">
+                    <h3 className="text-lg font-semibold mb-4 pb-2 border-b text-foreground">
+                      Información de la Compra
+                    </h3>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex justify-between">
+                        <span className="font-medium text-muted-foreground">Código:</span>
+                        <span className="font-medium">{selectedCompraDetails.compra.codigo}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-medium text-muted-foreground">Fecha:</span>
+                        <span>{new Date(selectedCompraDetails.compra.fecha).toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-medium text-muted-foreground">Hora:</span>
+                        <span>{selectedCompraDetails.compra.hora}</span>
+                      </div>
+                      <div className="flex justify-between pt-2 border-t mt-3">
+                        <span className="font-semibold text-muted-foreground">Total:</span>
+                        <span className="font-bold text-lg text-primary">
+                          {formatCurrency(selectedCompraDetails.compra.total)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Supplier Info Card */}
+                  <div className="bg-card rounded-lg border p-5 shadow-sm">
+                    <h3 className="text-lg font-semibold mb-4 pb-2 border-b text-foreground">
+                      Información del Proveedor
+                    </h3>
+                    {selectedCompraDetails.proveedor ? (
+                      <div className="space-y-3 text-sm">
+                        <div className="flex justify-between">
+                          <span className="font-medium text-muted-foreground">Nombre:</span>
+                          <span className="text-right">{selectedCompraDetails.proveedor.nombre}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-medium text-muted-foreground">Documento:</span>
+                          <span>{selectedCompraDetails.proveedor.numeroDocumento || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-medium text-muted-foreground">Teléfono:</span>
+                          <span>{selectedCompraDetails.proveedor.telefono || 'N/A'}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Información del proveedor no disponible</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Column - Products Table */}
+                <div className="space-y-6">
+                  <div className="bg-card rounded-lg border shadow-sm overflow-hidden">
+                    <div className="p-5 border-b">
+                      <h3 className="text-lg font-semibold text-foreground">
+                        Productos Comprados
+                      </h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-border">
+                        <thead className="bg-muted/30">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                              Producto
+                            </th>
+                            <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                              Cant.
+                            </th>
+                            <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                              P. Unitario
+                            </th>
+                            <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                              Subtotal
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {selectedCompraDetails.detalles.map((detalle) => (
+                            <tr key={detalle.id} className="hover:bg-muted/10 transition-colors">
+                              <td className="px-4 py-3 text-sm">
+                                <div className="font-medium">
+                                  {detalle.producto?.nombre || `Producto ${detalle.productoId}`}
+                                  {detalle.producto?.codigo && (
+                                    <span className="text-xs text-muted-foreground block">
+                                      Código: {detalle.producto.codigo}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right text-sm">
+                                {detalle.cantidad}
+                              </td>
+                              <td className="px-4 py-3 text-right text-sm">
+                                {formatCurrency(Number(detalle.precioCompra))}
+                              </td>
+                              <td className="px-4 py-3 text-right text-sm font-medium">
+                                {formatCurrency(Number(detalle.total))}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-muted/30">
+                          <tr>
+                            <td colSpan={3} className="px-4 py-3 text-right text-sm font-medium">
+                              Total General
+                            </td>
+                            <td className="px-4 py-3 text-right text-base font-bold text-primary">
+                              {formatCurrency(selectedCompraDetails.compra.total)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end space-x-3 pt-6 mt-6 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => printTicket(selectedCompraDetails.compra)}
+                  className="flex items-center gap-2 px-5"
+                >
+                  <Printer className="h-4 w-4" />
+                  Imprimir Ticket
+                </Button>
+                <Button
+                  onClick={() => setShowDetails(false)}
+                  variant="default"
+                  className="px-5"
+                >
+                  Cerrar
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
     </Layout>
   );
 };
