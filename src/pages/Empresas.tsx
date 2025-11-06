@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Building, Plus, Search, PenSquare, XSquare } from "lucide-react"
 import type { Empresa, CreateEmpresa } from "@/types"
 import { useRolePermissions } from "@/hooks/useRolePermissions"
+import { useAuth } from "@/hooks/useAuth"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getImageSrc } from "@/utils/imageUtils"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -221,10 +222,18 @@ const Empresas = () => {
   const [administradores, setAdministradores] = useState<Usuario[]>([])
   const [loadingAdmins, setLoadingAdmins] = useState(false)
 
+  const { user } = useAuth()
+
   const fetchEmpresas = async () => {
     try {
       const response = await getAllEmpresas()
-      setEmpresas(response)
+      // Si el usuario es administrador, mostrar todas las empresas
+      // Si no, filtrar solo las empresas del usuario
+      const filteredEmpresas = user?.cargo === 'Administrador' 
+        ? response 
+        : response.filter(empresa => empresa.owner === user?.id)
+      
+      setEmpresas(filteredEmpresas)
     } catch (error) {
       console.error("Error al cargar empresas:", error)
       toast({
