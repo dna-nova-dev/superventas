@@ -51,7 +51,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 type ProductoSeleccionado = {
   producto: Producto;
   cantidad: number;
-  precio: string;
+  precio: string; // This represents the purchase price (precioCompra)
 };
 interface CompraFormProps {
   compraId?: string;
@@ -74,6 +74,11 @@ export const CompraForm = () => {
   const { currentUser, empresaId } = useAuth();
   const navigate = useNavigate();
   const location = useLocation(); // Get location object
+
+  // Helper function to get the purchase price, falling back to 0 if not set
+  const getPrecioCompra = (producto: Producto): string => {
+    return producto.precioCompra || '0.00';
+  };
 
   const [productos, setProductos] = useState<Producto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]); // Initialize with empty array
@@ -239,7 +244,7 @@ export const CompraForm = () => {
         {
           producto,
           cantidad: 1,
-          precio: producto.precioVenta.toString(),
+          precio: getPrecioCompra(producto),
         },
       ];
     });
@@ -731,7 +736,7 @@ export const CompraForm = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium">
-                          {formatCurrency(producto.precioVenta)}
+                          {formatCurrency(getPrecioCompra(producto))}
                         </span>
                         <Plus className="h-4 w-4 text-primary" />
                       </div>
@@ -832,9 +837,7 @@ export const CompraForm = () => {
                           </p>{" "}
                           {/* Truncate */}
                           <p className="text-xs text-muted-foreground">
-                            {" "}
-                            {/* Smaller text */}
-                            {formatCurrency(item.precio)} c/u
+                            {formatCurrency(getPrecioCompra(item.producto))} c/u
                           </p>
                         </div>
                         <div className="flex items-center gap-1">

@@ -300,7 +300,16 @@ const Compras = () => {
     },
     {
       header: "Total",
-      accessor: (compra: Compra) => formatCurrency(compra.total),
+      accessor: (compra: Compra) => {
+        // Calculate total from detalles if available, otherwise use compra.total
+        if (compra.detalles && compra.detalles.length > 0) {
+          const total = compra.detalles.reduce((sum, detalle) => {
+            return sum + (parseFloat(detalle.precioCompra) * detalle.cantidad);
+          }, 0);
+          return formatCurrency(total);
+        }
+        return formatCurrency(compra.total);
+      },
       className: "font-medium",
     },
   ];
