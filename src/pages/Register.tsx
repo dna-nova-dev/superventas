@@ -16,6 +16,28 @@ const Register = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  
+  // Password validation states
+  const [passwordValidations, setPasswordValidations] = useState({
+    minLength: false,
+    hasUppercase: false,
+    hasLowercase: false,
+    hasNumber: false,
+    hasSpecialChar: false
+  });
+  
+  // Check password requirements
+  const validatePassword = (password: string) => {
+    setPasswordValidations({
+      minLength: password.length >= 8,
+      hasUppercase: /[A-Z]/.test(password),
+      hasLowercase: /[a-z]/.test(password),
+      hasNumber: /[0-9]/.test(password),
+      hasSpecialChar: /[!@#$%^&*(),.?":{}|<>]/.test(password)
+    });
+  };
+  
+  const isPasswordValid = Object.values(passwordValidations).every(Boolean);
   const { toast } = useToast();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
@@ -72,6 +94,11 @@ const Register = () => {
       ...prev,
       [name]: value
     }));
+    
+    // Validate password in real-time
+    if (name === 'password') {
+      validatePassword(value);
+    }
   };
 
   const validateStep1 = () => {
@@ -365,34 +392,68 @@ const Register = () => {
                     required
                     value={formData.username}
                     onChange={handleChange}
-                    placeholder="Nombre de usuario"
+                    placeholder="Tu nombre de usuario"
                   />
                 </div>
 
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="password">Contraseña</Label>
                   <div className="relative">
                     <Input
                       id="password"
                       name="password"
                       type={showPassword ? "text" : "password"}
-                      required
                       value={formData.password}
                       onChange={handleChange}
+                      className={`pr-10 ${formData.password && !isPasswordValid ? 'border-amber-500' : ''} ${formData.password && isPasswordValid ? 'border-green-500' : ''}`}
+                      required
                       placeholder="••••••••"
                     />
                     <button
                       type="button"
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                       onClick={() => setShowPassword(!showPassword)}
                     >
-                      {showPassword ? (
-                        <EyeOff className="h-5 w-5" />
-                      ) : (
-                        <Eye className="h-5 w-5" />
-                      )}
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
+                  {formData.password && (
+                    <div className="mt-2 text-sm text-gray-600 space-y-1">
+                      <p className="font-medium">La contraseña debe contener:</p>
+                      <ul className="space-y-1">
+                        <li className={`flex items-center ${passwordValidations.minLength ? 'text-green-600' : 'text-gray-500'}`}>
+                          <span className={`inline-block w-4 h-4 mr-2 ${passwordValidations.minLength ? 'text-green-500' : 'text-gray-400'}`}>
+                            {passwordValidations.minLength ? '✓' : '•'}
+                          </span>
+                          Mínimo 8 caracteres
+                        </li>
+                        <li className={`flex items-center ${passwordValidations.hasUppercase ? 'text-green-600' : 'text-gray-500'}`}>
+                          <span className={`inline-block w-4 h-4 mr-2 ${passwordValidations.hasUppercase ? 'text-green-500' : 'text-gray-400'}`}>
+                            {passwordValidations.hasUppercase ? '✓' : '•'}
+                          </span>
+                          Al menos una mayúscula
+                        </li>
+                        <li className={`flex items-center ${passwordValidations.hasLowercase ? 'text-green-600' : 'text-gray-500'}`}>
+                          <span className={`inline-block w-4 h-4 mr-2 ${passwordValidations.hasLowercase ? 'text-green-500' : 'text-gray-400'}`}>
+                            {passwordValidations.hasLowercase ? '✓' : '•'}
+                          </span>
+                          Al menos una minúscula
+                        </li>
+                        <li className={`flex items-center ${passwordValidations.hasNumber ? 'text-green-600' : 'text-gray-500'}`}>
+                          <span className={`inline-block w-4 h-4 mr-2 ${passwordValidations.hasNumber ? 'text-green-500' : 'text-gray-400'}`}>
+                            {passwordValidations.hasNumber ? '✓' : '•'}
+                          </span>
+                          Al menos un número
+                        </li>
+                        <li className={`flex items-center ${passwordValidations.hasSpecialChar ? 'text-green-600' : 'text-gray-500'}`}>
+                          <span className={`inline-block w-4 h-4 mr-2 ${passwordValidations.hasSpecialChar ? 'text-green-500' : 'text-gray-400'}`}>
+                            {passwordValidations.hasSpecialChar ? '✓' : '•'}
+                          </span>
+                          Al menos un carácter especial (!@#$%^&*)
+                        </li>
+                      </ul>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -406,6 +467,7 @@ const Register = () => {
                       value={formData.confirmPassword}
                       onChange={handleChange}
                       placeholder="••••••••"
+                      className={formData.confirmPassword && formData.password !== formData.confirmPassword ? 'border-red-500' : formData.confirmPassword ? 'border-green-500' : ''}
                     />
                     <button
                       type="button"
