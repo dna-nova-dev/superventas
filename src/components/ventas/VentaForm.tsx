@@ -576,7 +576,11 @@ export const VentaForm = () => {
       // Obtener fecha y hora actual
       const now = new Date();
       const fecha = now.toISOString().split("T")[0];
-      const hora = now.toTimeString().split(" ")[0];
+      const hora = now.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: true 
+      }).toLowerCase();  // Formato: "10:13 pm"
 
       // Crear la venta con estado 'pendiente'
       const venta = await createVenta({
