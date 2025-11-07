@@ -15,8 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { getAllProductos } from "@/services/productoService";
-import { updateProducto } from "@/services/productoService";
+import { getAllProductos, getProductoById, updateProducto } from "@/services/productoService";
 import { getAllCategorias } from "@/services/categoriaService";
 import { getAllClientes } from "@/services/clienteService";
 import { getVentas, createVenta, updateVenta } from "@/services/ventaService";
@@ -782,10 +781,26 @@ export const VentaForm = () => {
               empresaId: empresaId || 1,
             } as CreateVentaDetalle);
             
-            // Actualizar stock
-            await updateProducto(p.producto.id, {
-              stockTotal: (p.producto.stockTotal || 0) - p.cantidad,
-            });
+            // Obtener el stock actual del producto desde la base de datos
+            const productoActual = await getProductoById(p.producto.id);
+            if (!productoActual) {
+              throw new Error(`No se pudo obtener la información del producto ${p.producto.nombre}`);
+            }
+            
+            const stockActual = Number(productoActual.stockTotal || 0);
+            const nuevaCantidad = stockActual - p.cantidad;
+            
+            if (nuevaCantidad < 0) {
+              throw new Error(`No hay suficiente stock para ${p.producto.nombre}. Stock disponible: ${stockActual}`);
+            }
+            
+            // Actualizar stock restando la cantidad vendida
+            const productoActualizado = {
+              ...productoActual,
+              stockTotal: nuevaCantidad
+            };
+            
+            await updateProducto(p.producto.id, productoActualizado);
           })
         );
       }
