@@ -463,40 +463,32 @@ export const VentaForm = () => {
 
   // Agregar producto a la venta
   const agregarProducto = (producto: Producto) => {
-    const stockDisponible = producto.stockTotal || 0;
-    if (stockDisponible <= 0) {
-      toast({
-        title: "Sin stock",
-        description: `No hay stock disponible para ${producto.nombre}`,
-        variant: "destructive",
-      });
-      return;
-    }
-
     // Verificar si el producto ya está en el carrito
     const productoExistente = productosSeleccionados.find(
       (p) => p.producto.id === producto.id
     );
 
-    if (productoExistente) {
-      // Verificar stock para la nueva cantidad
-      const nuevaCantidad = productoExistente.cantidad + 1;
-      const { suficiente, mensaje } = verificarStockDisponible(producto, nuevaCantidad);
-      
-      if (!suficiente) {
-        toast({
-          title: "Error de stock",
-          description: mensaje,
-          variant: "destructive",
-        });
-        return;
-      }
+    // Calcular la cantidad que se intenta agregar
+    const cantidadAAgregar = productoExistente ? productoExistente.cantidad + 1 : 1;
+    
+    // Verificar stock disponible
+    const { suficiente, mensaje } = verificarStockDisponible(producto, cantidadAAgregar);
+    
+    if (!suficiente) {
+      toast({
+        title: "Error de stock",
+        description: mensaje,
+        variant: "destructive",
+      });
+      return;
+    }
 
+    if (productoExistente) {
       // Si ya existe, incrementar la cantidad
       setProductosSeleccionados((prev) =>
         prev.map((p) =>
           p.producto.id === producto.id
-            ? { ...p, cantidad: nuevaCantidad }
+            ? { ...p, cantidad: cantidadAAgregar }
             : p
         )
       );
