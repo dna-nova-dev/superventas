@@ -849,14 +849,8 @@ export const VentaForm = () => {
           // Actualizar otros campos si es necesario
         });
         
-        // Actualizar stock para los productos vendidos
-        await Promise.all(
-          productosSeleccionados.map(async (p) => {
-            await updateProducto(p.producto.id, {
-              stockTotal: (p.producto.stockTotal || 0) - p.cantidad,
-            });
-          })
-        );
+        // No es necesario actualizar el stock manualmente aquí
+        // ya que el backend ya lo maneja al actualizar la venta
       } else {
         // Si es una venta nueva, crearla normalmente
         const ventaData = {
