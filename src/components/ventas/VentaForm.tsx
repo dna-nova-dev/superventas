@@ -34,6 +34,9 @@ import { ApiService } from "@/services/api.service";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/data/mockData";
 import type { Producto, Categoria, Cliente, VentaDetalle } from "@/types";
+
+// Constante para el ID de cliente cuando no hay cliente seleccionado
+const CLIENTE_SIN_REGISTRAR_ID = 0;
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -78,7 +81,7 @@ interface ProductoVentaPendiente {
 
 interface VentaPendiente {
   id: number;
-  clienteId: number;
+  clienteId: number | null; // Permitir null para cuando no hay cliente
   clienteName: string;
   cliente_name: string;
   productos: ProductoVentaPendiente[];
@@ -132,9 +135,21 @@ interface VentaFormProps {
 // Usamos la interfaz VentaPendiente importada de @/types
 
 export const VentaForm = () => {
+  // Función para formatear la hora en 'h:mm am/pm'
+  const formatTime = (date: Date) => {
+    const hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'pm' : 'am';
+    const formattedHours = hours % 12 || 12; // Convertir a formato 12 horas
+    return `${formattedHours}:${minutes} ${ampm}`;
+  };
   const { toast } = useToast();
-  const { currentUser, empresaId } = useAuth();
+  const { currentUser, empresaId: empresaIdFromAuth } = useAuth();
   const navigate = useNavigate();
+  
+  // Add fallback for empresaId and log its value
+  const empresaId = empresaIdFromAuth || 1; // Default to 1 if not available
+  console.log('Current empresaId:', empresaId);
   const location = useLocation(); // Get location object
 
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -150,7 +165,7 @@ export const VentaForm = () => {
   const [selectedCajaId, setSelectedCajaId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategorias, setSelectedCategorias] = useState<number[]>([]);
-  const [selectedCliente, setSelectedCliente] = useState<number | null>(null);
+  const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
   const [selectedName, setSelectedName] = useState<string>("");
   const [productosSeleccionados, setProductosSeleccionados] = useState<
     ProductoSeleccionado[]
@@ -458,31 +473,44 @@ export const VentaForm = () => {
       return;
     }
 
-    setProductosSeleccionados((prev) => {
-      const existing = prev.find((p) => p.producto.id === producto.id);
-      if (existing) {
-        const nuevaCantidad = existing.cantidad + 1;
-        if (nuevaCantidad > stockDisponible) {
-          toast({
-            title: "Stock insuficiente",
-            description: `No hay suficiente stock de ${producto.nombre}`,
-            variant: "destructive",
-          });
-          return prev;
-        }
-        return prev.map((p) =>
-          p.producto.id === producto.id ? { ...p, cantidad: nuevaCantidad } : p
-        );
+    // Verificar si el producto ya está en el carrito
+    const productoExistente = productosSeleccionados.find(
+      (p) => p.producto.id === producto.id
+    );
+
+    if (productoExistente) {
+      // Verificar stock para la nueva cantidad
+      const nuevaCantidad = productoExistente.cantidad + 1;
+      const { suficiente, mensaje } = verificarStockDisponible(producto, nuevaCantidad);
+      
+      if (!suficiente) {
+        toast({
+          title: "Error de stock",
+          description: mensaje,
+          variant: "destructive",
+        });
+        return;
       }
-      return [
+
+      // Si ya existe, incrementar la cantidad
+      setProductosSeleccionados((prev) =>
+        prev.map((p) =>
+          p.producto.id === producto.id
+            ? { ...p, cantidad: nuevaCantidad }
+            : p
+        )
+      );
+    } else {
+      // Si no existe, agregarlo al carrito
+      setProductosSeleccionados((prev) => [
         ...prev,
         {
           producto,
           cantidad: 1,
           precio: producto.precioVenta.toString(),
         },
-      ];
-    });
+      ]);
+    }
   };
 
   // Actualizar cantidad de producto
@@ -492,10 +520,12 @@ export const VentaForm = () => {
     const producto = productos.find((p) => p.id === productoId);
     if (!producto) return;
 
-    if (cantidad > (producto.stockTotal || 0)) {
+    const { suficiente, mensaje } = verificarStockDisponible(producto, cantidad);
+    
+    if (!suficiente) {
       toast({
-        title: "Stock insuficiente",
-        description: `No hay suficiente stock de ${producto.nombre}`,
+        title: "Error de stock",
+        description: mensaje,
         variant: "destructive",
       });
       return;
@@ -506,21 +536,54 @@ export const VentaForm = () => {
     );
   };
 
-  // Eliminar producto de la venta
-  const eliminarProducto = (productoId: number) => {
+  // Función para incrementar la cantidad de un producto en el carrito
+  const handleIncrement = (producto: Producto) => {
+    const productoEnCarrito = productosSeleccionados.find(p => p.producto.id === producto.id);
+    if (!productoEnCarrito) return;
+
+    const nuevaCantidad = productoEnCarrito.cantidad + 1;
+    const { suficiente, mensaje } = verificarStockDisponible(producto, nuevaCantidad);
+    
+    if (!suficiente) {
+      toast({
+        title: "Error de stock",
+        description: mensaje,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setProductosSeleccionados((prev) =>
-      prev.filter((p) => p.producto.id !== productoId)
+      prev.map((p) =>
+        p.producto.id === producto.id
+          ? { ...p, cantidad: nuevaCantidad }
+          : p
+      )
     );
   };
 
-  // Calcular total de la venta
-  const total = productosSeleccionados.reduce(
-    (sum, p) => sum + p.cantidad * parseFloat(p.precio),
-    0
-  );
+  // Función para eliminar un producto del carrito
+  const eliminarProducto = (productoId: number) => {
+    setProductosSeleccionados(prev => 
+      prev.filter(p => p.producto.id !== productoId)
+    );
+  };
 
-  // Calcular cambio
-  const cambio = pago - total;
+  
+  // Función para verificar el stock disponible
+  const verificarStockDisponible = (producto: Producto, cantidadDeseada: number): { suficiente: boolean; mensaje: string } => {
+    const stockDisponible = Number(producto.stockTotal) || 0;
+    if (stockDisponible <= 0) {
+      return { suficiente: false, mensaje: `No hay stock disponible para ${producto.nombre}` };
+    }
+    if (cantidadDeseada > stockDisponible) {
+      return { 
+        suficiente: false, 
+        mensaje: `Stock insuficiente para ${producto.nombre}. Stock disponible: ${stockDisponible}` 
+      };
+    }
+    return { suficiente: true, mensaje: '' };
+  };
 
   // Función para manejar la eliminación de una venta pendiente
   const handleDeleteVentaPendiente = async (ventaId: number) => {
@@ -584,8 +647,10 @@ export const VentaForm = () => {
       });
 
       setProductosSeleccionados(productosSeleccionados);
-      setSelectedCliente(venta.clienteId || null);
-      setSelectedName(venta.clienteName || "");
+      // Buscar el cliente por ID si existe
+      const cliente = venta.clienteId ? clientes.find(c => c.id === venta.clienteId) || null : null;
+      setSelectedCliente(cliente);
+      setSelectedName(cliente ? `${cliente.nombre} ${cliente.apellido || ''}`.trim() : "");
       // No es necesario establecer el estado aquí ya que se maneja en el formulario
       setPago(0);
       setEditingPendingSaleId(venta.id);
@@ -638,17 +703,14 @@ export const VentaForm = () => {
       // Obtener fecha y hora actual
       const now = new Date();
       const fecha = now.toISOString().split("T")[0];
-      const hora = now.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true 
-      }).toLowerCase();  // Formato: "10:13 pm"
+      
+      const hora = formatTime(now);
 
       // Crear la venta con estado 'pendiente'
       const venta = await createVenta({
         codigo: codigoVenta,
         empresaId,
-        clienteId: selectedCliente || 1,
+        clienteId: selectedCliente?.id || null,
         usuarioId: authUser.id || 1,
         cajaId: selectedCajaId || 1,
         estado: "pendiente",
@@ -697,8 +759,48 @@ export const VentaForm = () => {
     }
   };
 
+  // Verificar stock antes de guardar la venta
+  const verificarStockVenta = async (): Promise<{ valido: boolean; mensaje: string }> => {
+    try {
+      // Verificar stock para cada producto en el carrito
+      for (const item of productosSeleccionados) {
+        const productoActual = await getProductoById(item.producto.id);
+        if (!productoActual) {
+          return { 
+            valido: false, 
+            mensaje: `No se pudo verificar el stock para ${item.producto.nombre}` 
+          };
+        }
+
+        const stockDisponible = Number(productoActual.stockTotal) || 0;
+        if (stockDisponible < item.cantidad) {
+          return { 
+            valido: false, 
+            mensaje: `Stock insuficiente para ${item.producto.nombre}. Stock disponible: ${stockDisponible}` 
+          };
+        }
+      }
+      return { valido: true, mensaje: '' };
+    } catch (error) {
+      console.error('Error al verificar stock:', error);
+      return { 
+        valido: false, 
+        mensaje: 'Error al verificar el stock de los productos' 
+      };
+    }
+  };
+
+  // Calcular total y cambio
+  const total = productosSeleccionados.reduce(
+    (sum, item) => sum + item.cantidad * parseFloat(item.precio),
+    0
+  );
+
+  const cambio = pago - total;
+
   // Guardar venta finalizada
   const guardarVenta = async () => {
+    // Verificar autenticación
     if (!currentUser?.id) {
       toast({
         title: "Error",
@@ -707,6 +809,11 @@ export const VentaForm = () => {
       });
       return;
     }
+    
+    // Si no hay cliente seleccionado, usar null
+    const clienteId = selectedCliente?.id || null;
+    
+    // Verificar productos seleccionados
     if (productosSeleccionados.length === 0) {
       toast({
         title: "Error",
@@ -715,10 +822,23 @@ export const VentaForm = () => {
       });
       return;
     }
+
+    // Verificar pago
     if (pago < total) {
       toast({
         title: "Error",
         description: "El pago no cubre el total de la venta",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Verificar stock
+    const resultadoVerificacion = await verificarStockVenta();
+    if (!resultadoVerificacion.valido) {
+      toast({
+        title: "Error de stock",
+        description: resultadoVerificacion.mensaje,
         variant: "destructive",
       });
       return;
@@ -747,27 +867,39 @@ export const VentaForm = () => {
         );
       } else {
         // Si es una venta nueva, crearla normalmente
-        venta = await createVenta({
+        const ventaData = {
           codigo: `V-${Date.now()}`,
-          clienteId: selectedCliente || null,
+          clienteId: clienteId, // Puede ser null si no hay cliente
+          clienteName: selectedCliente 
+            ? `${selectedCliente.nombre || ''} ${selectedCliente.apellido || ''}`.trim() 
+            : 'Cliente no registrado',
           usuarioId: currentUser.id,
-          cajaId: selectedCajaId || currentUser.cajaId || 1,
-          empresaId: empresaId,
-          total: total.toFixed(2),
-          pagado: pago.toFixed(2),
-          cambio: cambio.toFixed(2),
-          fecha: new Date().toISOString().split("T")[0],
-          hora: new Date()
-            .toLocaleTimeString("en-US", {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: true,
-            })
-            .toLowerCase(),
-          detalles: [],
-        });
+          empresaId,
+          estado: 'completada',
+          total: total.toString(),
+          pago: pago.toString(),
+          cambio: Math.max(0, cambio).toString(),
+          fecha: new Date().toISOString().split('T')[0],
+          nombreVendedor: currentUser.nombre || 'Vendedor',
+          hora: formatTime(new Date()),
+          pagado: '1', // Using '1' as string to match CreateVenta interface, will be converted to decimal by the database
+          cajaId: 1, // Debe ser un número según el tipo CreateVenta
+          detalles: productosSeleccionados.map(p => ({
+            productoId: p.producto.id,
+            cantidad: p.cantidad,
+            precioVenta: p.precio,
+            precioCompra: p.producto.precioCompra || '0',
+            subtotal: (parseFloat(p.precio) * p.cantidad).toString(),
+            total: (parseFloat(p.precio) * p.cantidad).toString(),
+            descripcion: p.producto.nombre || '',
+            ventaCodigo: `V-${Date.now()}`,
+            empresaId: empresaId // Add empresaId to each detail item
+          }))
+        };
 
-        // Crear detalles de venta y actualizar stock
+        venta = await createVenta(ventaData);
+
+        // Actualizar stock para los productos vendidos
         await Promise.all(
           productosSeleccionados.map(async (p) => {
             await createVentaDetalle({
@@ -1121,12 +1253,19 @@ export const VentaForm = () => {
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1">Cliente</label>
               <Select
-                value={selectedCliente?.toString() ?? "no_cliente"}
-                onValueChange={(value) =>
-                  setSelectedCliente(
-                    value === "no_cliente" ? null : Number(value)
-                  )
-                }
+                value={selectedCliente?.id?.toString() ?? "no_cliente"}
+                onValueChange={(value) => {
+                  if (value === "no_cliente") {
+                    setSelectedCliente(null);
+                    setSelectedName("");
+                  } else {
+                    const cliente = clientes.find(c => c.id === Number(value));
+                    if (cliente) {
+                      setSelectedCliente(cliente);
+                      setSelectedName(`${cliente.nombre} ${cliente.apellido || ''}`.trim());
+                    }
+                  }
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar cliente" />
