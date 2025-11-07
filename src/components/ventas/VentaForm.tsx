@@ -26,7 +26,8 @@ import {
   updateVentaPendiente, 
   deleteVentaPendiente, 
   convertirAVentaPendiente, 
-  getVentasPendientes 
+  getVentasPendientes,
+  completarVentaPendiente
 } from "@/services/ventaPendienteService";
 import { createVentaDetalle } from "@/services/ventaDetalleService";
 import type { CreateVentaDetalle } from "@/types";
@@ -841,16 +842,15 @@ export const VentaForm = () => {
       let venta;
       
       if (editingPendingSaleId) {
-        // Si es una venta pendiente, actualizarla en lugar de crear una nueva
-        venta = await updateVenta(editingPendingSaleId, {
-          estado: 'completada',
+        // Si es una venta pendiente, usar la función completarVentaPendiente
+        // que maneja correctamente la actualización del stock
+        venta = await completarVentaPendiente(editingPendingSaleId, {
           pagado: pago.toFixed(2),
           cambio: cambio.toFixed(2),
-          // Actualizar otros campos si es necesario
+          cajaId: 1, // Asegúrate de obtener el ID de caja correcto
+          usuarioId: currentUser.id,
+          empresaId: empresaId || 1
         });
-        
-        // No es necesario actualizar el stock manualmente aquí
-        // ya que el backend ya lo maneja al actualizar la venta
       } else {
         // Si es una venta nueva, crearla normalmente
         const ventaData = {

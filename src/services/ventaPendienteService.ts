@@ -148,16 +148,24 @@ export const completarVentaPendiente = async (id: number, pagoInfo: {
   empresaId: number;
 }): Promise<Venta> => {
   try {
-    // Verificamos que la venta exista y esté en estado pendiente
-    await getVentaPendienteById(id);
+    // Primero obtenemos la venta para verificar que existe y está pendiente
+    const venta = await apiService.get<Venta>(`${VENTA_ENDPOINT}/getById/${id}`);
+    
+    if (venta.estado !== 'pendiente') {
+      throw new Error('La venta no está en estado pendiente');
+    }
     
     // Actualizamos la venta a estado 'completada' con la información de pago
     return await apiService.patch<Venta>(
-      `${VENTA_ENDPOINT}/${id}`,
+      `${VENTA_ENDPOINT}/update/${id}`,
       {
         estado: 'completada',
-        ...pagoInfo,
-        fechaFinalizacion: new Date().toISOString()
+        pagado: pagoInfo.pagado,
+        cambio: pagoInfo.cambio,
+        cajaId: pagoInfo.cajaId,
+        fechaFinalizacion: new Date().toISOString(),
+        // El backend debería manejar la actualización del stock
+        // cuando se actualiza el estado a 'completada'
       }
     );
   } catch (error) {
