@@ -2,17 +2,53 @@ import { ApiService } from './api.service';
 import type { VentaPendiente, CreateVentaPendiente, Venta } from '@/types';
 
 const apiService = new ApiService();
-const VENTA_PENDIENTE_ENDPOINT = 'ventas-pendientes';
+const VENTA_ENDPOINT = 'ventas';
 
 /**
- * Obtiene todas las ventas pendientes
+ * Obtiene todas las ventas con estado 'pendiente'
+ * @param empresaId ID de la empresa (opcional)
  */
 export const getVentasPendientes = async (empresaId?: number): Promise<VentaPendiente[]> => {
   try {
-    const queryString = empresaId ? `?empresaId=${empresaId}` : '';
-    const url = `${VENTA_PENDIENTE_ENDPOINT}${queryString}`;
+    // Usamos el endpoint principal de ventas con filtro de empresa
+    const params = new URLSearchParams({
+      ...(empresaId && { empresaId: empresaId.toString() })
+    });
+
+    // Usamos el endpoint principal de ventas
+    const url = `ventas/all-relations?${params.toString()}`;
+    console.log('🔄 Obteniendo ventas pendientes de:', url);
+
     const response = await apiService.get<VentaPendiente[]>(url);
-    return response;
+    
+    if (!Array.isArray(response)) {
+      console.error('❌ La respuesta de la API no es un array:', response);
+      return [];
+    }
+
+    console.log('📦 Total de ventas recibidas de la API:', response.length);
+    
+    // Filtramos las ventas pendientes
+    console.log('🔍 Estado de todas las ventas recibidas:');
+    response.forEach(venta => {
+      console.log(`  ID: ${venta.id}, Estado: '${venta.estado}', Fecha: ${venta.fecha}, Total: ${venta.total}`);
+    });
+    
+    // Filtramos las ventas pendientes
+    const ventasPendientes = response.filter(venta => {
+      const estado = String(venta.estado || '').trim().toLowerCase();
+      const esPendiente = estado === 'pendiente';
+      
+      if (!esPendiente) {
+        console.log(`ℹ️  Filtrada venta ID ${venta.id} - Estado: '${venta.estado || 'undefined'}'`);
+        return false;
+      }
+      return true;
+    });
+
+    console.log(`✅ ${ventasPendientes.length} ventas pendientes encontradas`);
+
+    return ventasPendientes;
   } catch (error: unknown) {
     console.error("Error fetching ventas pendientes:", error);
     throw error;
@@ -23,7 +59,11 @@ export const getVentasPendientes = async (empresaId?: number): Promise<VentaPend
  * Obtiene una venta pendiente por su ID
  */
 export const getVentaPendienteById = async (id: number): Promise<VentaPendiente> => {
-  return await apiService.get<VentaPendiente>(`${VENTA_PENDIENTE_ENDPOINT}/getById/${id}`);
+  const venta = await apiService.get<VentaPendiente>(`${VENTA_ENDPOINT}/${id}`);
+  if (venta.estado !== 'pendiente') {
+    throw new Error('La venta no está en estado pendiente');
+  }
+  return venta;
 };
 
 /**
@@ -31,8 +71,12 @@ export const getVentaPendienteById = async (id: number): Promise<VentaPendiente>
  */
 export const getVentaPendienteByCodigo = async (codigo: string): Promise<VentaPendiente> => {
   try {
-    const response = await apiService.get<VentaPendiente>(`${VENTA_PENDIENTE_ENDPOINT}/by-codigo/${codigo}`);
-    return response;
+    const response = await apiService.get<VentaPendiente[]>(`${VENTA_ENDPOINT}/by-codigo/${codigo}`);
+    const venta = response[0]; // Asumiendo que el endpoint devuelve un array
+    if (venta?.estado !== 'pendiente') {
+      throw new Error('No se encontró una venta pendiente con ese código');
+    }
+    return venta;
   } catch (error: unknown) {
     console.error(`Error fetching venta pendiente with codigo ${codigo}:`, error);
     throw error;
@@ -45,8 +89,8 @@ export const getVentaPendienteByCodigo = async (codigo: string): Promise<VentaPe
 export const createVentaPendiente = async (ventaPendiente: CreateVentaPendiente): Promise<VentaPendiente> => {
   try {
     return await apiService.post<VentaPendiente>(
-      `${VENTA_PENDIENTE_ENDPOINT}/create`, 
-      ventaPendiente as unknown as Record<string, unknown>
+      `${VENTA_ENDPOINT}`,
+      { ...ventaPendiente, estado: 'pendiente' } as unknown as Record<string, unknown>
     );
   } catch (error) {
     console.error("Error al crear venta pendiente:", error);
@@ -59,9 +103,12 @@ export const createVentaPendiente = async (ventaPendiente: CreateVentaPendiente)
  */
 export const updateVentaPendiente = async (id: number, ventaPendiente: Partial<VentaPendiente>): Promise<VentaPendiente> => {
   try {
+    // Verificamos que la venta exista y esté en estado pendiente
+    await getVentaPendienteById(id);
+    
     return await apiService.patch<VentaPendiente>(
-      `${VENTA_PENDIENTE_ENDPOINT}/update/${id}`, 
-      ventaPendiente
+      `${VENTA_ENDPOINT}/${id}`,
+      { ...ventaPendiente, estado: 'pendiente' }
     );
   } catch (error) {
     console.error(`Error al actualizar venta pendiente ${id}:`, error);
@@ -70,14 +117,23 @@ export const updateVentaPendiente = async (id: number, ventaPendiente: Partial<V
 };
 
 /**
- * Elimina una venta pendiente
+ * Cambia el estado de una venta de 'pendiente' a 'completada'
+ * @param id ID de la venta a actualizar
  */
 export const deleteVentaPendiente = async (id: number): Promise<void> => {
   try {
-    await apiService.delete(`${VENTA_PENDIENTE_ENDPOINT}/delete/${id}`);
-  } catch (error) {
-    console.error(`Error al eliminar venta pendiente ${id}:`, error);
-    throw new Error("No se pudo eliminar la venta pendiente. Por favor, intente nuevamente.");
+    // Usamos el endpoint de actualización de venta
+    await apiService.patch(`ventas/update/${id}`, { 
+      estado: 'completada',
+      // Asegurarse de incluir los campos necesarios para la actualización
+      // según lo que espere tu backend
+      actualizado: new Date().toISOString()
+    });
+    
+    console.log(`✅ Venta ${id} marcada como completada correctamente`);
+  } catch (error: unknown) {
+    console.error(`Error al actualizar el estado de la venta ${id}:`, error);
+    throw new Error('No se pudo actualizar el estado de la venta. Por favor, intente nuevamente.');
   }
 };
 
@@ -92,13 +148,18 @@ export const completarVentaPendiente = async (id: number, pagoInfo: {
   empresaId: number;
 }): Promise<Venta> => {
   try {
-    const response = await apiService.patch<Venta>(
-      `${VENTA_PENDIENTE_ENDPOINT}/${id}/vender`, 
-      pagoInfo
-    );
+    // Verificamos que la venta exista y esté en estado pendiente
+    await getVentaPendienteById(id);
     
-    // La venta pendiente se elimina del backend, así que no necesitamos hacer nada más
-    return response;
+    // Actualizamos la venta a estado 'completada' con la información de pago
+    return await apiService.patch<Venta>(
+      `${VENTA_ENDPOINT}/${id}`,
+      {
+        estado: 'completada',
+        ...pagoInfo,
+        fechaFinalizacion: new Date().toISOString()
+      }
+    );
   } catch (error) {
     console.error(`Error al completar venta pendiente ${id}:`, error);
     const errorMessage = error.response?.data?.message || error.message;
@@ -113,9 +174,17 @@ export const completarVentaPendiente = async (id: number, pagoInfo: {
  */
 export const convertirAVentaPendiente = async (ventaId: number, empresaId?: number): Promise<VentaPendiente> => {
   try {
-    return await apiService.post<VentaPendiente>(
-      `${VENTA_PENDIENTE_ENDPOINT}/from-venta/${ventaId}`,
-      empresaId ? { empresaId } : {}
+    // Primero obtenemos la venta
+    const venta = await apiService.get<VentaPendiente>(`${VENTA_ENDPOINT}/${ventaId}`);
+    
+    // Actualizamos el estado a 'pendiente'
+    return await apiService.patch<VentaPendiente>(
+      `${VENTA_ENDPOINT}/${ventaId}`,
+      { 
+        ...venta,
+        estado: 'pendiente',
+        ...(empresaId && { empresaId })
+      }
     );
   } catch (error) {
     console.error(`Error al convertir venta ${ventaId} a pendiente:`, error);

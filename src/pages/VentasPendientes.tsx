@@ -13,7 +13,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useRolePermissions } from "@/hooks/useRolePermissions";
-import { getVentas, deleteVenta, updateVenta } from "@/services/ventaService";
+import { deleteVenta, updateVenta } from "@/services/ventaService";
+import { getVentas } from "@/services/ventaService";
 import { Venta } from "@/types";
 
 type EstadoVenta = 'pendiente' | 'completada' | 'cancelada' | 'devuelta';
@@ -53,13 +54,18 @@ export default function VentasPendientes() {
 
     try {
       setLoading(true);
-      // Obtener solo las ventas con estado 'pendiente'
+      console.log('Solicitando ventas pendientes...');
+      
+      // Usar getVentas con el estado "pendiente"
       const data = await getVentas("pendiente");
+      console.log('Ventas pendientes recibidas:', data);
+      
       setVentasPendientes(data);
     } catch (error) {
+      console.error('Error al cargar ventas pendientes:', error);
       toast({
         title: "Error",
-        description: "No se pudieron cargar las ventas pendientes",
+        description: "No se pudieron cargar las ventas pendientes: " + (error instanceof Error ? error.message : 'Error desconocido'),
         variant: "destructive",
       });
     } finally {

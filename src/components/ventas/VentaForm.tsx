@@ -19,13 +19,18 @@ import { getAllProductos } from "@/services/productoService";
 import { updateProducto } from "@/services/productoService";
 import { getAllCategorias } from "@/services/categoriaService";
 import { getAllClientes } from "@/services/clienteService";
-import { createVenta } from "@/services/ventaService";
-import { createVentaDetalle } from "@/services/ventaDetalleService";
-import {
-  convertirAVentaPendiente,
-  getVentasPendientes,
-  deleteVentaPendiente as deleteVentaPendienteService,
+import { getVentas, createVenta, updateVenta } from "@/services/ventaService";
+import { 
+  getVentaPendienteById, 
+  getVentaPendienteByCodigo, 
+  createVentaPendiente, 
+  updateVentaPendiente, 
+  deleteVentaPendiente, 
+  convertirAVentaPendiente, 
+  getVentasPendientes 
 } from "@/services/ventaPendienteService";
+import { createVentaDetalle } from "@/services/ventaDetalleService";
+import type { CreateVentaDetalle } from "@/types";
 import { ApiService } from "@/services/api.service";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/data/mockData";
@@ -86,6 +91,31 @@ interface VentaPendiente {
   nombreVendedor: string;
   // Propiedad opcional para la UI
   producto?: Producto | null;
+}
+
+interface ProductoVentaResponse {
+  id?: number;
+  productoId?: number;
+  nombre?: string;
+  cantidad?: number;
+  precioVenta?: string | number;
+  total?: string | number;
+  descripcion?: string;
+  producto?: Producto | null;
+}
+
+interface VentaPendienteResponse {
+  id: number;
+  clienteId: number;
+  clienteName?: string;
+  cliente_name?: string;
+  productos: unknown[] | string;
+  total: string | number;
+  estado: string;
+  fecha?: string;
+  usuarioId?: number;
+  empresaId?: number;
+  nombreVendedor?: string;
 }
 
 type ProductoSeleccionado = {
@@ -194,49 +224,125 @@ export const VentaForm = () => {
 
     setLoadingVentasPendientes(true);
     try {
-      const ventas = await getVentasPendientes(empresaId);
-
+      console.log('Cargando ventas pendientes...');
+      
+      // Usar la función getVentasPendientes que ya maneja el filtrado por estado
+      const ventas = await getVentasPendientes(empresaId) as unknown as Array<{
+        id: number;
+        clienteId: number;
+        cliente?: {
+          id: number;
+          nombre: string;
+          apellido?: string;
+          telefono?: string;
+          email?: string;
+          tipoDocumento?: string;
+          numeroDocumento?: string;
+          direccion?: string;
+          departamento?: string;
+          municipio?: string;
+          empresaId?: number;
+        };
+        clienteName?: string;
+        cliente_name?: string;
+        detalles?: Array<{
+          id: number;
+          cantidad: number;
+          precioVenta: string | number;
+          total: string | number;
+          descripcion?: string;
+          producto?: {
+            id: number;
+            nombre: string;
+            codigo?: string;
+            precioVenta?: string | number;
+            precioCompra?: string | number;
+            stock?: number;
+            descripcion?: string;
+            imagen?: string;
+            categoriaId?: number;
+            empresaId?: number;
+          };
+          productoId: number;
+        }>;
+        productos?: unknown[] | string;
+        total: string | number;
+        estado: string;
+        fecha?: string;
+        hora?: string;
+        usuarioId?: number;
+        empresaId?: number;
+        nombreVendedor?: string;
+        usuario?: {
+          id: number;
+          nombre: string;
+          apellido?: string;
+          email?: string;
+        };
+      }>;
+      
+      console.log('Ventas pendientes recibidas:', ventas);
+      
       // Mapear los datos de la API al formato local
-      const ventasMapeadas = ventas.map((v: ApiVentaPendiente) => {
-        // Parse productos if it's a string (JSON)
+      const ventasMapeadas = ventas.map((venta) => {
+        // Parse productos from detalles array
         let productos: ProductoVentaPendiente[] = [];
 
-        if (Array.isArray(v.productos)) {
-          // If productos is already an array, use it directly
-          productos = v.productos.map(
-            (p: {
-              id?: number;
-              productoId?: number;
-              nombre?: string;
-              cantidad?: number;
-              precioVenta?: string | number;
-              total?: string | number;
-              descripcion?: string;
-              producto?: Producto | null;
-            }) => {
-              // Create a basic product object if not provided
-              const producto = p.producto || {
-                id: p.productoId || 0,
-                nombre: p.nombre || "Producto sin nombre",
-                descripcion: p.descripcion || "",
-                precioVenta: p.precioVenta?.toString() || "0",
-                stock: 0,
-                stockTotal: 0,
-                tipoUnidad: "unidad",
-                precioCompra: "0",
-                marca: "",
-                modelo: "",
-                estado: "activo",
-                categoriaId: 1,
-                empresaId: empresaId || 1,
-                codigo: `PROD-${p.productoId || 'temp'}`,
-                foto: "",
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                deletedAt: null
-              };
-
-              return {
+        if (Array.isArray(venta.detalles)) {
+          // Map the detalles array to ProductoVentaPendiente format
+          productos = venta.detalles.map((detalle) => ({
+            id: detalle.id || 0,
+            productoId: detalle.productoId || 0,
+            nombre: detalle.producto?.nombre || detalle.descripcion || "Producto sin nombre",
+            cantidad: detalle.cantidad || 1,
+            precioVenta: typeof detalle.precioVenta === 'number' 
+              ? detalle.precioVenta.toString() 
+              : detalle.precioVenta || "0",
+            total: typeof detalle.total === 'number' 
+              ? detalle.total.toString() 
+              : detalle.total || "0",
+            descripcion: detalle.descripcion || "",
+            producto: detalle.producto ? {
+              id: detalle.producto.id,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              deletedAt: null,
+              codigo: detalle.producto.codigo || "",
+              nombre: detalle.producto.nombre,
+              stockTotal: typeof detalle.producto.stock === 'number' ? detalle.producto.stock : 0,
+              tipoUnidad: "unidad", // Default value
+              precioCompra: typeof detalle.producto.precioCompra === 'number' 
+                ? detalle.producto.precioCompra.toString() 
+                : detalle.producto.precioCompra || "0",
+              precioVenta: typeof detalle.producto.precioVenta === 'number' 
+                ? detalle.producto.precioVenta.toString() 
+                : detalle.producto.precioVenta || "0",
+              marca: "", // Default value
+              modelo: "", // Default value
+              estado: "activo", // Default value
+              foto: detalle.producto.imagen || "",
+              categoriaId: detalle.producto.categoriaId || 0,
+              empresaId: detalle.producto.empresaId || 0
+            } : null
+          }));
+        } else if (Array.isArray(venta.productos)) {
+          // Fallback to productos array if detalles is not available
+          productos = (venta.productos as ProductoVentaResponse[]).map((p) => ({
+            id: p.id || 0,
+            productoId: p.productoId || 0,
+            nombre: p.nombre || "Producto sin nombre",
+            cantidad: p.cantidad || 1,
+            precioVenta: p.precioVenta?.toString() || "0",
+            total: p.total?.toString() || "0",
+            descripcion: p.descripcion || "",
+            producto: p.producto || null
+          }));
+        } else if (typeof venta.productos === "string") {
+          // If productos is a JSON string, parse it
+          try {
+            const parsedProductos = JSON.parse(venta.productos);
+            if (Array.isArray(parsedProductos)) {
+              productos = (parsedProductos as ProductoVentaResponse[]).map((p) => ({
                 id: p.id || 0,
                 productoId: p.productoId || 0,
                 nombre: p.nombre || "Producto sin nombre",
@@ -244,85 +350,42 @@ export const VentaForm = () => {
                 precioVenta: p.precioVenta?.toString() || "0",
                 total: p.total?.toString() || "0",
                 descripcion: p.descripcion || "",
-                producto: producto
-              };
-            }
-          );
-        } else if (typeof v.productos === "string") {
-          // If productos is a JSON string, parse it
-          try {
-            const parsedProductos = JSON.parse(v.productos);
-            if (Array.isArray(parsedProductos)) {
-              productos = parsedProductos.map(
-                (p: {
-                  id?: number;
-                  productoId?: number;
-                  cantidad?: number;
-                  precioVenta?: string | number;
-                  nombre?: string;
-                  total?: string | number;
-                  descripcion?: string;
-                  producto?: Producto | null;
-                }) => {
-                  // Create a basic product object if not provided
-                  const producto = p.producto || {
-                    id: p.productoId || 0,
-                    nombre: p.nombre || "Producto sin nombre",
-                    descripcion: p.descripcion || "",
-                    precioVenta: p.precioVenta?.toString() || "0",
-                    stock: 0,
-                    stockTotal: 0,
-                    tipoUnidad: "unidad",
-                    precioCompra: "0",
-                    marca: "",
-                    modelo: "",
-                    estado: "activo",
-                    categoriaId: 1,
-                    empresaId: empresaId || 1,
-                    codigo: `PROD-${p.productoId || 'temp'}`,
-                    foto: "",
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                    deletedAt: null
-                  };
-
-                  return {
-                    id: p.id || 0,
-                    productoId: p.productoId || 0,
-                    nombre: p.nombre || "Producto sin nombre",
-                    cantidad: p.cantidad || 1,
-                    precioVenta: p.precioVenta?.toString() || "0",
-                    total: p.total?.toString() || "0",
-                    descripcion: p.descripcion || "",
-                    producto: producto
-                  };
-                }
-              );
+                producto: p.producto || null
+              }));
             }
           } catch (e) {
             console.error("Error parsing productos JSON:", e);
           }
         }
 
-        const venta: VentaPendiente = {
-          ...v,
-          cliente_name: v.clienteName || "Cliente no especificado",
+        // Obtener el nombre del cliente de la relación o de los campos planos
+        const nombreCliente = venta.cliente 
+          ? `${venta.cliente.nombre}${venta.cliente.apellido ? ' ' + venta.cliente.apellido : ''}`
+          : venta.clienteName || venta.cliente_name || "Cliente no especificado";
+          
+        // Obtener el nombre del vendedor de la relación de usuario o del campo plano
+        const nombreVendedor = venta.usuario
+          ? `${venta.usuario.nombre}${venta.usuario.apellido ? ' ' + venta.usuario.apellido : ''}`
+          : venta.nombreVendedor || "";
+          
+        return {
+          id: venta.id,
+          clienteId: venta.clienteId,
+          clienteName: nombreCliente,
+          cliente_name: nombreCliente,
           productos: productos,
-          total: v.total,
-          estado:
-            v.estado === "pendiente" || v.estado === "completada"
-              ? (v.estado as "pendiente" | "completada")
-              : "pendiente",
-          fecha: v.fecha || new Date().toISOString(),
-          usuarioId: v.usuarioId || 0,
-          empresaId: v.empresaId || 0,
-          nombreVendedor: v.nombreVendedor || "",
+          total: typeof venta.total === 'number' ? venta.total.toString() : venta.total,
+          estado: (venta.estado === "pendiente" || venta.estado === "completada" 
+            ? venta.estado 
+            : "pendiente") as 'pendiente' | 'completada',
+          fecha: venta.fecha || new Date().toISOString(),
+          usuarioId: venta.usuarioId || 0,
+          empresaId: venta.empresaId || empresaId || 0,
+          nombreVendedor: nombreVendedor
         };
-
-        return venta;
       });
 
-      setVentasPendientes(ventasMapeadas);
+      setVentasPendientes(ventasMapeadas as unknown as VentaPendiente[]);
     } catch (error) {
       console.error("Error al cargar ventas pendientes:", error);
       toast({
@@ -335,10 +398,10 @@ export const VentaForm = () => {
     }
   }, [empresaId, toast]);
 
-  // Cargar ventas pendientes al montar el componente
+  // Cargar ventas pendientes al montar el componente o cuando cambie empresaId
   useEffect(() => {
     loadVentasPendientes();
-  }, [loadVentasPendientes]);
+  }, [loadVentasPendientes, empresaId]);
 
   // Cargar venta pendiente desde URL al iniciar o cuando cambia la URL
   useEffect(() => {
@@ -463,7 +526,7 @@ export const VentaForm = () => {
   // Función para manejar la eliminación de una venta pendiente
   const handleDeleteVentaPendiente = async (ventaId: number) => {
     try {
-      await deleteVentaPendienteService(ventaId);
+      await deleteVentaPendiente(ventaId);
       await loadVentasPendientes();
       toast({
         title: "Venta pendiente eliminada",
@@ -664,54 +727,67 @@ export const VentaForm = () => {
 
     setLoading(true);
     try {
-      // Crear venta en backend
-      const venta = await createVenta({
-        codigo: `V-${Date.now()}`,
-        clienteId: selectedCliente || null,
-        usuarioId: currentUser.id,
-        cajaId: selectedCajaId || currentUser.cajaId || 1,
-        empresaId: empresaId,
-        total: total.toFixed(2),
-        pagado: pago.toFixed(2),
-        cambio: cambio.toFixed(2),
-        fecha: new Date().toISOString().split("T")[0],
-        hora: new Date()
-          .toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true,
-          })
-          .toLowerCase(),
-        detalles: [], // Detalles se crearán después
-      });
-
-      // Crear detalles de venta y actualizar stock
-      await Promise.all(
-        productosSeleccionados.map(async (p) => {
-          await createVentaDetalle({
-            id: 0, // O el ID real si es necesario
-            cantidad: p.cantidad,
-            precioVenta: p.precio, // Use the string value directly
-            precioCompra: p.producto.precioCompra, // Asumiendo que existe
-            descripcion: p.producto.nombre,
-            total: (p.cantidad * parseFloat(p.precio)).toFixed(2),
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            deletedAt: null,
-            ventaCodigo: venta.codigo,
-            productoId: p.producto.id,
-            empresaId: empresaId,
-          } as VentaDetalle); // Cast a VentaDetalle
-          // Actualizar stock
-          await updateProducto(p.producto.id, {
-            stockTotal: (p.producto.stockTotal || 0) - p.cantidad,
-          });
-        })
-      );
-
-      // Si esta venta era pendiente, eliminarla de la base de datos
+      let venta;
+      
       if (editingPendingSaleId) {
-        await deleteVentaPendienteService(editingPendingSaleId); // Reutiliza la función para limpiar la venta pendiente
+        // Si es una venta pendiente, actualizarla en lugar de crear una nueva
+        venta = await updateVenta(editingPendingSaleId, {
+          estado: 'completada',
+          pagado: pago.toFixed(2),
+          cambio: cambio.toFixed(2),
+          // Actualizar otros campos si es necesario
+        });
+        
+        // Actualizar stock para los productos vendidos
+        await Promise.all(
+          productosSeleccionados.map(async (p) => {
+            await updateProducto(p.producto.id, {
+              stockTotal: (p.producto.stockTotal || 0) - p.cantidad,
+            });
+          })
+        );
+      } else {
+        // Si es una venta nueva, crearla normalmente
+        venta = await createVenta({
+          codigo: `V-${Date.now()}`,
+          clienteId: selectedCliente || null,
+          usuarioId: currentUser.id,
+          cajaId: selectedCajaId || currentUser.cajaId || 1,
+          empresaId: empresaId,
+          total: total.toFixed(2),
+          pagado: pago.toFixed(2),
+          cambio: cambio.toFixed(2),
+          fecha: new Date().toISOString().split("T")[0],
+          hora: new Date()
+            .toLocaleTimeString("en-US", {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            })
+            .toLowerCase(),
+          detalles: [],
+        });
+
+        // Crear detalles de venta y actualizar stock
+        await Promise.all(
+          productosSeleccionados.map(async (p) => {
+            await createVentaDetalle({
+              cantidad: p.cantidad,
+              precioVenta: p.precio,
+              precioCompra: p.producto.precioCompra || '0',
+              descripcion: p.producto.nombre,
+              total: (p.cantidad * parseFloat(p.precio)).toFixed(2),
+              ventaCodigo: venta.codigo,
+              productoId: p.producto.id,
+              empresaId: empresaId || 1,
+            } as CreateVentaDetalle);
+            
+            // Actualizar stock
+            await updateProducto(p.producto.id, {
+              stockTotal: (p.producto.stockTotal || 0) - p.cantidad,
+            });
+          })
+        );
       }
 
       // Reset form state after successful sale
