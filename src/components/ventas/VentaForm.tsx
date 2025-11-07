@@ -899,42 +899,8 @@ export const VentaForm = () => {
 
         venta = await createVenta(ventaData);
 
-        // Actualizar stock para los productos vendidos
-        await Promise.all(
-          productosSeleccionados.map(async (p) => {
-            await createVentaDetalle({
-              cantidad: p.cantidad,
-              precioVenta: p.precio,
-              precioCompra: p.producto.precioCompra || '0',
-              descripcion: p.producto.nombre,
-              total: (p.cantidad * parseFloat(p.precio)).toFixed(2),
-              ventaCodigo: venta.codigo,
-              productoId: p.producto.id,
-              empresaId: empresaId || 1,
-            } as CreateVentaDetalle);
-            
-            // Obtener el stock actual del producto desde la base de datos
-            const productoActual = await getProductoById(p.producto.id);
-            if (!productoActual) {
-              throw new Error(`No se pudo obtener la información del producto ${p.producto.nombre}`);
-            }
-            
-            const stockActual = Number(productoActual.stockTotal || 0);
-            const nuevaCantidad = stockActual - p.cantidad;
-            
-            if (nuevaCantidad < 0) {
-              throw new Error(`No hay suficiente stock para ${p.producto.nombre}. Stock disponible: ${stockActual}`);
-            }
-            
-            // Actualizar stock restando la cantidad vendida
-            const productoActualizado = {
-              ...productoActual,
-              stockTotal: nuevaCantidad
-            };
-            
-            await updateProducto(p.producto.id, productoActualizado);
-          })
-        );
+        // No es necesario actualizar el stock manualmente aquí
+        // ya que el backend ya lo maneja al crear la venta
       }
 
       // Reset form state after successful sale
