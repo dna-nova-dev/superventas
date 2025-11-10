@@ -214,7 +214,7 @@ export const VentaForm = () => {
     loadData();
   }, [toast, empresaId]); // Added empresaId to dependency array
 
-  // Cargar cajas disponibles
+  // Cargar cajas disponibles y seleccionar la caja del usuario
   useEffect(() => {
     const fetchCajas = async () => {
       try {
@@ -222,6 +222,18 @@ export const VentaForm = () => {
           mod.getAllCajas(empresaId)
         );
         setCajas(cajasData);
+        
+        // Si el usuario tiene una caja asignada, seleccionarla automáticamente
+        if (currentUser?.cajaId) {
+          // Verificar si la caja del usuario existe en las cajas cargadas
+          const userCaja = cajasData.find(caja => caja.id === currentUser.cajaId);
+          if (userCaja) {
+            setSelectedCajaId(currentUser.cajaId);
+            console.log('Caja del usuario seleccionada automáticamente:', userCaja);
+          } else {
+            console.warn('La caja asignada al usuario no existe en las cajas disponibles');
+          }
+        }
       } catch (error) {
         toast({
           title: "Error",
@@ -230,8 +242,9 @@ export const VentaForm = () => {
         });
       }
     };
+    
     fetchCajas();
-  }, [empresaId, toast]);
+  }, [empresaId, toast, currentUser?.cajaId]);
 
   // Cargar ventas pendientes desde la base de datos
   const loadVentasPendientes = useCallback(async () => {
