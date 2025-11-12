@@ -136,13 +136,12 @@ interface VentaFormProps {
 // Usamos la interfaz VentaPendiente importada de @/types
 
 export const VentaForm = () => {
-  // Función para formatear la hora en 'h:mm am/pm'
+  // Función para formatear la hora en formato 'HH:MM:SS' (24 horas)
   const formatTime = (date: Date) => {
-    const hours = date.getHours();
+    const hours = date.getHours().toString().padStart(2, '0');
     const minutes = date.getMinutes().toString().padStart(2, '0');
-    const ampm = hours >= 12 ? 'pm' : 'am';
-    const formattedHours = hours % 12 || 12; // Convertir a formato 12 horas
-    return `${formattedHours}:${minutes} ${ampm}`;
+    const seconds = date.getSeconds().toString().padStart(2, '0');
+    return `${hours}:${minutes}:${seconds}`;
   };
   const { toast } = useToast();
   const { currentUser, empresaId: empresaIdFromAuth } = useAuth();
@@ -857,10 +856,20 @@ export const VentaForm = () => {
       if (editingPendingSaleId) {
         // Si es una venta pendiente, usar la función completarVentaPendiente
         // que maneja correctamente la actualización del stock
+        if (!selectedCajaId) {
+          toast({
+            title: "Error",
+            description: "Debe seleccionar una caja para continuar",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+        
         venta = await completarVentaPendiente(editingPendingSaleId, {
           pagado: pago.toFixed(2),
           cambio: cambio.toFixed(2),
-          cajaId: 1, // Asegúrate de obtener el ID de caja correcto
+          cajaId: selectedCajaId,
           usuarioId: currentUser.id,
           empresaId: empresaId || 1
         });
@@ -878,11 +887,19 @@ export const VentaForm = () => {
           total: total.toString(),
           pago: pago.toString(),
           cambio: Math.max(0, cambio).toString(),
-          fecha: new Date().toISOString().split('T')[0],
+          // Usar la fecha local sin conversión a UTC
+          fecha: (() => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          })(),
           nombreVendedor: currentUser.nombre || 'Vendedor',
+          // Usar la hora local
           hora: formatTime(new Date()),
           pagado: '1', // Using '1' as string to match CreateVenta interface, will be converted to decimal by the database
-          cajaId: 1, // Debe ser un número según el tipo CreateVenta
+          cajaId: selectedCajaId || 1, // Usar la caja seleccionada o 1 como respaldo
           detalles: productosSeleccionados.map(p => ({
             productoId: p.producto.id,
             cantidad: p.cantidad,

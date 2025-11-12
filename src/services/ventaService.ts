@@ -11,6 +11,8 @@ export const getVentas = async (estado?: EstadoVenta): Promise<Venta[]> => {
       params.append('estado', estado);
     }
     const response = await apiService.get<Venta[]>(`${VENTA_ENDPOINT}/all-relations?${params.toString()}`);
+    
+    // Return the raw dates from the database without any transformation
     return response;
   } catch (error: unknown) {
     console.error("Error fetching ventas:", error);

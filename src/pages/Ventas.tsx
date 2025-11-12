@@ -158,10 +158,14 @@ const Ventas = () => {
       const filteredVentas = allVentas.filter((v) => v.empresaId === empresaId);
       console.log('Ventas filtradas:', filteredVentas);
       
-      // Ordenar por fecha más reciente primero
-      const sortedVentas = [...filteredVentas].sort((a, b) => 
-        new Date(b.fecha + 'T' + b.hora).getTime() - new Date(a.fecha + 'T' + a.hora).getTime()
-      );
+      // Ordenar por fecha y hora sin convertir a objetos Date para evitar problemas de zona horaria
+      const sortedVentas = [...filteredVentas].sort((a, b) => {
+        // Comparar fechas en formato 'YYYY-MM-DD' y horas en formato 'HH:MM:SS'
+        const dateCompare = b.fecha.localeCompare(a.fecha);
+        if (dateCompare !== 0) return dateCompare;
+        // Si las fechas son iguales, comparar por hora
+        return b.hora.localeCompare(a.hora);
+      });
       
       setVentas(sortedVentas);
       
@@ -273,34 +277,30 @@ const Ventas = () => {
 
   const isToday = (dateString: string) => {
     const today = new Date();
-    const date = new Date(dateString);
-
-    // Reset time parts to avoid timezone issues
-    const todayDate = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate()
-    );
-    const compareDate = new Date(
-      date.getFullYear(),
-      date.getMonth(),
-      date.getDate()
-    );
-
-    return todayDate.getTime() === compareDate.getTime();
+    const todayFormatted = today.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+    return dateString === todayFormatted;
   };
 
   const isInDateRange = (dateString: string) => {
     if (!dateRange.from) return true;
 
-    const date = new Date(dateString);
-
+    // Convertir la fecha de la venta a objeto Date para comparación
+    const [year, month, day] = dateString.split('-').map(Number);
+    const ventaDate = new Date(year, month - 1, day);
+    
+    // Ajustar la fecha de inicio (from) a inicio del día
+    const fromDate = new Date(dateRange.from);
+    fromDate.setHours(0, 0, 0, 0);
+    
     if (dateRange.from && !dateRange.to) {
-      return date >= dateRange.from;
+      return ventaDate >= fromDate;
     }
-
-    if (dateRange.from && dateRange.to) {
-      return date >= dateRange.from && date <= dateRange.to;
+    
+    // Si hay fecha de fin (to), ajustarla a fin del día
+    if (dateRange.to) {
+      const toDate = new Date(dateRange.to);
+      toDate.setHours(23, 59, 59, 999);
+      return ventaDate >= fromDate && ventaDate <= toDate;
     }
 
     return true;

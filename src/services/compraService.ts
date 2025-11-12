@@ -8,9 +8,12 @@ export const getCompras = async (): Promise<Compra[]> => {
   try {
     const response = await apiService.get<Compra[]>(`${VENTA_ENDPOINT}/all`);
     return response;
-  } catch (error: any) {
-    console.error("Error fetching ventas:", error);
-    throw error;
+  } catch (error: unknown) {
+    console.error("Error fetching compras:", error);
+    if (error instanceof Error) {
+      throw new Error(`Error al obtener compras: ${error.message}`);
+    }
+    throw new Error('Ocurrió un error desconocido al obtener las compras');
   }
 };
 
@@ -18,7 +21,7 @@ export const getCompraById = async (id: number): Promise<Compra> => {
   return await apiService.get<Compra>(`${VENTA_ENDPOINT}/getById/${id}`);
 };
 
-export const createCompra = async (compra: CreateCompra): Promise<Compra> => {
+export const createCompra = async (compra: CreateCompra & Record<string, unknown>): Promise<Compra> => {
   return await apiService.post<Compra>(`${VENTA_ENDPOINT}/create`, compra);
 };
 
