@@ -340,68 +340,68 @@ function filtrarVentas(
       return true;
     }
 
-    // Función para normalizar fechas a formato YYYY-MM-DD
-    const toYMD = (date: Date | string | null): string | null => {
+    // Función para normalizar fechas a timestamp para comparación
+    const toTimestamp = (date: Date | string | null): number | null => {
       if (!date) return null;
       
-      // Si ya es un string en formato YYYY-MM-DD, devolverlo directamente
-      if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        return date;
-      }
+      // Si ya es un timestamp
+      if (typeof date === 'number') return date;
       
-      // Si es un objeto Date o string ISO, convertirlo a YYYY-MM-DD
+      // Si es un string, intentar convertirlo a Date
       const d = date instanceof Date ? date : new Date(date);
-      if (isNaN(d.getTime())) return null;
       
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
+      // Usar getTime() para obtener el timestamp en milisegundos
+      return isNaN(d.getTime()) ? null : d.getTime();
     };
 
-    // Normalizar fechas a formato YYYY-MM-DD para comparación
-    const fechaVentaStr = toYMD(fechaVenta) || '';
-    const fechaInicioStr = toYMD(fechaInicio);
-    const fechaFinStr = toYMD(fechaFin);
+    // Obtener timestamps para comparación
+    const ventaTimestamp = toTimestamp(fechaVenta);
+    const inicioTimestamp = toTimestamp(fechaInicio);
+    const finTimestamp = toTimestamp(fechaFin);
+
+    // Si no se pudo obtener el timestamp de la venta, no incluirla
+    if (ventaTimestamp === null) return false;
 
     // Debug: Mostrar información detallada de la comparación
     console.log('=== DEBUG COMPARACIÓN DE FECHAS ===');
     console.log('Venta ID:', ventaId);
     console.log('Fecha venta (original):', fechaVenta);
-    console.log('Fecha venta (normalizada):', fechaVentaStr);
-    console.log('Rango de filtro:', {
-      desde: fechaInicioStr,
-      hasta: fechaFinStr
-    });
+    console.log('Fecha venta (timestamp):', ventaTimestamp, new Date(ventaTimestamp).toISOString());
+    
+    if (inicioTimestamp) {
+      console.log('Fecha inicio (timestamp):', inicioTimestamp, new Date(inicioTimestamp).toISOString());
+    }
+    if (finTimestamp) {
+      console.log('Fecha fin (timestamp):', finTimestamp, new Date(finTimestamp).toISOString());
+    }
 
     try {
       // Si hay un rango de fechas, verificar si la venta está dentro del rango
-      if (fechaInicioStr && fechaFinStr) {
-        // Comparación directa de strings en formato YYYY-MM-DD
-        const cumpleRango = fechaVentaStr >= fechaInicioStr && fechaVentaStr <= fechaFinStr;
+      if (inicioTimestamp !== null && finTimestamp !== null) {
+        // Ajustar para incluir todo el día de la fecha fin
+        const finDelDia = new Date(finTimestamp);
+        finDelDia.setHours(23, 59, 59, 999);
+        const finDelDiaTimestamp = finDelDia.getTime();
         
-        console.log(`Comparación: ${fechaVentaStr} entre ${fechaInicioStr} y ${fechaFinStr} -> ${cumpleRango ? 'DENTRO' : 'FUERA'}`);
+        const cumpleRango = ventaTimestamp >= inicioTimestamp && ventaTimestamp <= finDelDiaTimestamp;
+        
+        console.log(`Comparación: ${ventaTimestamp} entre ${inicioTimestamp} y ${finDelDiaTimestamp} -> ${cumpleRango ? 'DENTRO' : 'FUERA'}`);
         
         if (!cumpleRango) {
           console.log(`Venta ${ventaId} fuera de rango`);
-          console.log('Tipo de fechas:', {
-            venta: typeof fechaVenta,
-            inicio: typeof fechaInicio,
-            fin: typeof fechaFin
-          });
         }
         return cumpleRango;
       }
       // Si solo hay fecha de inicio
-      else if (fechaInicioStr) {
-        const cumpleRango = fechaVentaStr >= fechaInicioStr;
-        console.log(`Comparación inicio: ${fechaVentaStr} >= ${fechaInicioStr} -> ${cumpleRango ? 'DENTRO' : 'FUERA'}`);
+      else if (inicioTimestamp !== null) {
+        const cumpleRango = ventaTimestamp >= inicioTimestamp;
+        console.log(`Comparación inicio: ${ventaTimestamp} >= ${inicioTimestamp} -> ${cumpleRango ? 'DENTRO' : 'FUERA'}`);
         return cumpleRango;
       }
       // Si solo hay fecha de fin
-      else if (fechaFinStr) {
-        const cumpleRango = fechaVentaStr <= fechaFinStr;
-        console.log(`Comparación fin: ${fechaVentaStr} <= ${fechaFinStr} -> ${cumpleRango ? 'DENTRO' : 'FUERA'}`);
+      else if (finTimestamp !== null) {
+        const cumpleRango = ventaTimestamp <= finTimestamp;
+        console.log(`Comparación fin: ${ventaTimestamp} <= ${finTimestamp} -> ${cumpleRango ? 'DENTRO' : 'FUERA'}`);
         return cumpleRango;
       }
     } catch (error) {
@@ -1673,8 +1673,26 @@ const Dashboard = () => {
 
   const stats = filteredStats;
   const recentSales = [...ventas]
-    .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
-    .slice(0, 3);
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 3)
+    .map(venta => ({
+      ...venta,
+      // Usar createdAt para mostrar la fecha y hora exactas de la venta
+      fecha: (() => {
+        try {
+          const fechaVenta = new Date(venta.createdAt);
+          const fechaFormateada = fechaVenta.toLocaleDateString('es-GT');
+          const horaFormateada = fechaVenta.toLocaleTimeString('es-GT', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          });
+          return `${fechaFormateada} ${horaFormateada}`;
+        } catch (error) {
+          console.error('Error al formatear la fecha:', error);
+          return venta.fecha || 'Fecha no disponible';
+        }
+      })()
+    }));
 
   const getTrendPercentage = (initial: number, final: number) => {
     if (initial === 0) return final === 0 ? "0%" : "+100%";
@@ -2271,7 +2289,7 @@ const Dashboard = () => {
                           {sale.cliente?.nombre || 'Cliente no especificado'}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          {new Date(sale.fecha).toLocaleDateString()}
+                          {sale.fecha || 'Fecha no disponible'}
                         </p>
                       </div>
                       <div className="text-right">
