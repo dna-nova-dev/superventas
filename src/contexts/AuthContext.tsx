@@ -2,6 +2,7 @@ import { useState, useEffect, type ReactNode } from "react"
 import type { UserResponse } from "@/services/usuarioService"
 import type { Empresa } from "@/types"
 import { AuthContext } from "./auth/AuthContext"
+import { getEmpresaById } from "@/services/empresaService"
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserResponse | null>(() => {
@@ -42,13 +43,97 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [user, empresaId]); // Incluimos empresaId en las dependencias
 
+  // Efecto para cargar la empresa cuando cambia el usuario o el ID de empresa
   useEffect(() => {
-    if (empresaId !== null) {
-      localStorage.setItem("empresaId", empresaId.toString())
-    } else {
-      localStorage.removeItem("empresaId")
+    console.log('useEffect - usuario o empresaId cambiaron:', { 
+      userId: user?.id, 
+      empresaId,
+      currentEmpresa: currentEmpresa?.id 
+    });
+
+    // Si no hay usuario o no hay empresaId, limpiamos
+    if (!user || !empresaId) {
+      console.log('No hay usuario o empresaId, limpiando...');
+      if (currentEmpresa) setCurrentEmpresa(null);
+      return;
     }
-  }, [empresaId])
+
+    // Si ya tenemos la empresa correcta, no hacemos nada
+    if (currentEmpresa?.id === empresaId) {
+      console.log('La empresa actual ya está cargada:', currentEmpresa);
+      return;
+    }
+
+    // Función para cargar la empresa
+    const cargarEmpresa = async () => {
+      console.log('Intentando cargar empresa con ID:', empresaId);
+      
+      try {
+        // Primero intentamos cargar la empresa desde el localStorage
+        const savedEmpresa = localStorage.getItem(`empresa_${empresaId}`);
+        if (savedEmpresa) {
+          try {
+            const parsedEmpresa = JSON.parse(savedEmpresa) as Empresa;
+            if (parsedEmpresa && parsedEmpresa.id === empresaId) {
+              console.log('Empresa cargada desde localStorage:', parsedEmpresa);
+              setCurrentEmpresa(parsedEmpresa);
+              return;
+            }
+          } catch (error) {
+            console.error('Error al analizar la empresa del localStorage:', error);
+          }
+        }
+
+        // Si no está en el localStorage, intentamos cargarla de la API
+        console.log('Buscando empresa en la API...');
+        try {
+          const empresaData = await getEmpresaById(empresaId);
+          if (empresaData) {
+            console.log('Empresa cargada desde la API:', empresaData);
+            // Guardamos en localStorage para futuras cargas
+            localStorage.setItem(`empresa_${empresaId}`, JSON.stringify(empresaData));
+            setCurrentEmpresa(empresaData);
+            return;
+          }
+        } catch (error) {
+          console.error('Error al cargar la empresa desde la API:', error);
+          // Continuamos con la creación de una empresa temporal
+        }
+
+        // Si no se pudo cargar, creamos una empresa temporal
+        console.log('Creando empresa temporal...');
+        const empresaTemporal: Empresa = {
+          id: empresaId,
+          nombre: `Empresa ${empresaId}`,
+          nit: '',
+          telefono: '',
+          email: '',
+          direccion: '',
+          owner: user.id, // Usamos el ID del usuario actual como propietario
+          foto: ''
+        };
+        
+        setCurrentEmpresa(empresaTemporal);
+        
+      } catch (error) {
+        console.error('Error al cargar la empresa:', error);
+        // En caso de error, creamos una empresa temporal de emergencia
+        const empresaEmergencia: Empresa = {
+          id: empresaId,
+          nombre: 'Empresa Temporal',
+          nit: '',
+          telefono: '',
+          email: '',
+          direccion: '',
+          owner: user.id,
+          foto: ''
+        };
+        setCurrentEmpresa(empresaEmergencia);
+      }
+    };
+
+    cargarEmpresa();
+  }, [user, empresaId, currentEmpresa]); // Incluimos currentEmpresa en las dependencias
 
   useEffect(() => {
     if (userRole === "Owner") {

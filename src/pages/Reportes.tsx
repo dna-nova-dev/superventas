@@ -1,5 +1,5 @@
 import type React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { formatCurrency } from "@/data/mockData";
 import {
@@ -49,22 +49,27 @@ import {
   Legend,
   LineChart,
 } from "recharts";
-import {
-  Categoria,
-  Cliente,
-  Empresa,
-  Producto,
-  Venta,
-  VentaDetalle,
-} from "@/types";
+import { Categoria, Cliente, Empresa as EmpresaType, Producto, Venta, VentaDetalle } from "@/types";
+
+// Interfaz mínima requerida para el generador de reportes
+interface Empresa {
+  id: number;
+  nombre: string;
+  nit: string;
+  telefono: string;
+  email: string;
+  direccion: string;
+  propietarioId: number;
+}
+
 import { Caja } from "../types/caja.interface";
 
-interface CategorySalesData {
-  empresaId: number;
+interface PieChartData {
+  name: string;
+  value: number;
+  color: string;
   categoriaId: number;
   categoriaNombre: string;
-  total: number;
-  color?: string;
 }
 
 const COLORS = [
@@ -162,22 +167,45 @@ const Reportes = () => {
   const [selectedCaja, setSelectedCaja] = useState<string>("");
   const { currentEmpresa } = useAuth();
 
+  // Obtener el ID de la empresa de manera segura
+  const empresaId = currentEmpresa?.id || 1; // Usar 1 como valor por defecto temporalmente
+  
   const filteredVentas = ventas.filter(
-    (v) => v.empresaId === currentEmpresa?.id
+    (v) => v.empresaId === empresaId
   );
   const filteredVentaDetalles = ventaDetalles.filter(
-    (vd) => vd.empresaId === currentEmpresa?.id
+    (vd) => vd.empresaId === empresaId
   );
   const filteredCategorias = categorias.filter(
-    (c) => c.empresaId === currentEmpresa?.id
+    (c) => c.empresaId === empresaId
   );
   const filteredClientes = clientes.filter(
-    (c) => c.empresaId === currentEmpresa?.id
+    (c) => c.empresaId === empresaId
   );
 
-  const reportGenerator = currentEmpresa
-    ? new ReportGenerator(currentEmpresa)
-    : null;
+  console.log('Datos filtrados:', {
+    filteredVentas,
+    filteredVentaDetalles,
+    filteredCategorias,
+    filteredClientes,
+    empresaId,
+    currentEmpresa // Para depuración
+  });
+
+  // Solo crear el reportGenerator si tenemos una empresa válida
+  const reportGenerator = useMemo(() => {
+    if (!currentEmpresa) {
+      console.warn('No hay una empresa seleccionada. No se puede generar el reporte.');
+      return null;
+    }
+    
+    try {
+      return new ReportGenerator(currentEmpresa);
+    } catch (error) {
+      console.error('Error al crear el generador de reportes:', error);
+      return null;
+    }
+  }, [currentEmpresa]);
 
   const loadCajas = useCallback(async () => {
     try {
@@ -194,6 +222,7 @@ const Reportes = () => {
 
   const loadInitialData = useCallback(async () => {
     try {
+      console.log('Iniciando carga de datos...');
       setLoading(true);
       const [
         ventasData,
@@ -209,6 +238,15 @@ const Reportes = () => {
         getAllClientes(),
       ]);
 
+      console.log('Datos cargados:', {
+        ventas: ventasData,
+        productos: productosData,
+        ventaDetalles: ventaDetallesData,
+        categorias: categoriasData,
+        clientes: clientesData,
+        currentEmpresa: currentEmpresa
+      });
+
       setVentas(ventasData);
       setProductos(productosData);
       setVentaDetalles(ventaDetallesData);
@@ -223,7 +261,7 @@ const Reportes = () => {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, currentEmpresa]);
 
   useEffect(() => {
     loadCajas();
@@ -236,20 +274,25 @@ const Reportes = () => {
 
     switch (period) {
       case "7days":
-        startDate = new Date(today.setDate(today.getDate() - 7));
+        startDate = new Date(today);
+        startDate.setDate(today.getDate() - 7);
         break;
       case "30days":
-        startDate = new Date(today.setDate(today.getDate() - 30));
+        startDate = new Date(today);
+        startDate.setDate(today.getDate() - 30);
         break;
       case "365days":
-        startDate = new Date(today.setDate(today.getDate() - 365));
+        startDate = new Date(today);
+        startDate.setDate(today.getDate() - 365);
         break;
       default:
         return filteredVentas;
     }
 
+    startDate.setHours(0, 0, 0, 0);
+    
     return filteredVentas.filter((venta) => {
-      const ventaDate = new Date(venta.fecha);
+      const ventaDate = new Date(venta.createdAt);
       return ventaDate >= startDate;
     });
   };
@@ -269,12 +312,14 @@ const Reportes = () => {
         return filteredVentaDetalles;
     }
 
+    startDate.setHours(0, 0, 0, 0);
+    
     return filteredVentaDetalles.filter((detalle) => {
       const venta = filteredVentas.find(
         (v) => v.codigo === detalle.ventaCodigo
       );
       if (!venta) return false;
-      const ventaDate = new Date(venta.fecha);
+      const ventaDate = new Date(venta.createdAt);
       return ventaDate >= startDate;
     });
   };
@@ -290,40 +335,97 @@ const Reportes = () => {
     0
   );
 
-  const getSalesByCategory = (): CategorySalesData[] => {
-    return filteredCategorias
-      .map((categoria, index) => {
-        const productosCategoria = productos.filter(
-          (p) => p.categoriaId === categoria.id
-        );
-        const productoIds = productosCategoria.map((p) => p.id);
-
-        const total = filteredVentaDetallesByPeriod
-          .filter((detalle) => productoIds.includes(detalle.productoId))
-          .reduce((sum, detalle) => sum + parseFloat(detalle.total), 0);
-
-        return {
-          empresaId: categoria.empresaId || 1, // Assuming a default empresaId if not available
-          categoriaId: categoria.id,
-          categoriaNombre: categoria.nombre,
-          total,
-          color: COLORS[index % COLORS.length],
+  const getSalesByCategory = (): PieChartData[] => {
+    // Group venta detalles by product category
+    const categorySales = filteredVentaDetallesByPeriod.reduce((acc, detalle) => {
+      const product = productos.find(p => p.id === detalle.productoId);
+      if (!product) return acc;
+      
+      const category = filteredCategorias.find(c => c.id === product.categoriaId);
+      if (!category) return acc;
+      
+      const total = parseFloat(detalle.total || '0');
+      
+      if (!acc[category.id]) {
+        acc[category.id] = {
+          name: category.nombre,
+          value: 0,
+          color: COLORS[Object.keys(acc).length % COLORS.length],
+          categoriaId: category.id,
+          categoriaNombre: category.nombre
         };
-      })
-      .filter((cat) => cat.total > 0); // Solo mostrar categorías con ventas
+      }
+      
+      acc[category.id].value += total;
+      return acc;
+    }, {} as Record<number, PieChartData>);
+    
+    // Convert to array and filter out categories with no sales
+    return Object.values(categorySales)
+      .filter(item => item.value > 0)
+      .map(item => ({
+        ...item,
+        value: Number(item.value.toFixed(2)) // Ensure 2 decimal places
+      }));
   };
 
   const totalVentasPorCategorias = getSalesByCategory();
+  
+  // Debug: Log the data for the pie chart
+  useEffect(() => {
+    // Log the first item's structure if it exists
+    if (totalVentasPorCategorias.length > 0) {
+      console.log('First category item structure:', {
+        ...totalVentasPorCategorias[0],
+        __type: 'First category item'
+      });
+    }
+    console.log('=== DEBUG: Pie Chart Data ===');
+    console.log('totalVentasPorCategorias:', JSON.parse(JSON.stringify(totalVentasPorCategorias)));
+    console.log('filteredVentaDetalles length:', filteredVentaDetalles.length);
+    console.log('filteredVentaDetallesByPeriod length:', filteredVentaDetallesByPeriod.length);
+    console.log('filteredCategorias:', JSON.parse(JSON.stringify(filteredCategorias)));
+    console.log('productos length:', productos.length);
+    console.log('selectedCategoryPeriod:', selectedCategoryPeriod);
+    
+    // Log detailed category data
+    console.log('=== Category Details ===');
+    filteredCategorias.forEach((cat, index) => {
+      const catProducts = productos.filter(p => p.categoriaId === cat.id);
+      const catSales = filteredVentaDetallesByPeriod
+        .filter(d => catProducts.some(p => p.id === d.productoId))
+        .reduce((sum, d) => sum + parseFloat(d.total), 0);
+      
+      console.log(`Category ${index + 1}:`, {
+        id: cat.id,
+        nombre: cat.nombre,
+        productos: catProducts.length,
+        ventas: catSales,
+        color: COLORS[index % COLORS.length]
+      });
+    });
+    
+    console.log('============================');
+  }, [totalVentasPorCategorias, filteredVentaDetalles, filteredVentaDetallesByPeriod, filteredCategorias, productos, selectedCategoryPeriod]);
 
   const handleDownloadReport = (
     reportType: string,
     format: "excel" | "pdf"
   ) => {
     try {
-      if (!reportGenerator || !currentEmpresa) {
+      if (!currentEmpresa) {
         toast({
           title: "Error",
-          description: "No se pudo cargar la información de la empresa",
+          description: "No hay una empresa seleccionada. Por favor, inicia sesión nuevamente.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      if (!reportGenerator) {
+        toast({
+          title: "Error",
+          description: "No se pudo inicializar el generador de reportes. Por favor, inténtalo de nuevo.",
           variant: "destructive",
         });
         return;
@@ -528,14 +630,16 @@ const Reportes = () => {
             variants={itemVariants}
             className="bg-transparent rounded-xl border shadow-sm overflow-hidden"
           >
-            <div className="p-6 pb-0">
-              <h2 className="text-xl font-semibold mb-2">
-                Ventas por Categoría
-              </h2>
+            <div className="p-6">
               <div className="flex justify-between items-center mb-4">
-                <p className="text-sm text-muted-foreground">
-                  Distribución de ventas por categorías
-                </p>
+                <div>
+                  <h2 className="text-xl font-semibold">
+                    Ventas por Categoría
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Distribución de ventas por categorías
+                  </p>
+                </div>
                 <Select
                   value={selectedCategoryPeriod}
                   onValueChange={setSelectedCategoryPeriod}
@@ -550,48 +654,69 @@ const Reportes = () => {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <div className="px-6 h-[300px]">
+              
               {totalVentasPorCategorias.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={totalVentasPorCategorias}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="total"
-                      nameKey="categoria"
-                      label={({ name, percent }) =>
-                        `${name}: ${(percent * 100).toFixed(0)}%`
-                      }
-                    >
-                      {totalVentasPorCategorias.map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={entry.color || COLORS[index % COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value: number) => formatCurrency(value)}
-                    />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center p-8">
-                  <div className="p-4 rounded-full bg-muted mb-3">
-                    <PieChart className="h-10 w-10 text-muted-foreground" />
+                <div className="space-y-4">
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Categoría
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Ventas
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Porcentaje
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-transparent divide-y divide-gray-200">
+                        {totalVentasPorCategorias.map((item, index) => (
+                          <tr key={index} className="hover:bg-muted/10">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center">
+                                <div 
+                                  className="w-3 h-3 rounded-full mr-2" 
+                                  style={{ backgroundColor: item.color }}
+                                />
+                                <span className="text-sm font-medium">{item.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                              {formatCurrency(item.value)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                              {totalVentas > 0 
+                                ? `${((item.value / totalVentas) * 100).toFixed(1)}%`
+                                : '0%'}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="bg-muted/10 font-medium">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            Total
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            {formatCurrency(totalVentas)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            100%
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
-                  <h3 className="text-lg font-medium mb-1">
-                    No hay datos disponibles
-                  </h3>
+                </div>
+              ) : (
+                <div className="text-center p-8 border rounded-lg">
+                  <div className="mx-auto w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mb-4">
+                    <PieChart className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-medium mb-1">No hay datos disponibles</h3>
                   <p className="text-sm text-muted-foreground">
-                    No se encontraron ventas para las categorías en el período
-                    seleccionado
+                    No se encontraron ventas para las categorías seleccionadas
                   </p>
                 </div>
               )}
@@ -745,16 +870,16 @@ const Reportes = () => {
               <tbody>
                 {totalVentasPorCategorias.map((item) => (
                   <tr
-                    key={`${item.categoriaId}-${item.total}`}
+                    key={`${item.categoriaId}-${item.value}`}
                     className="border-b last:border-0 hover:bg-muted/50"
                   >
-                    <td className="py-3">{item.categoriaId}</td>
+                    <td className="py-3">{item.name}</td>
                     <td className="py-3 text-right font-medium">
-                      {formatCurrency(item.total)}
+                      {formatCurrency(item.value)}
                     </td>
                     <td className="py-3 text-right">
                       {totalVentas > 0
-                        ? `${((item.total / totalVentas) * 100).toFixed(1)}%`
+                        ? `${((item.value / totalVentas) * 100).toFixed(1)}%`
                         : "0%"}
                     </td>
                   </tr>

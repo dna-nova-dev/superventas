@@ -811,21 +811,38 @@ const Ventas = () => {
 
   const filteredVentas = ventas.filter((venta) => {
     // Apply search filter
-    if (
-      searchQuery &&
-      !venta.codigo.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !venta.fecha.includes(searchQuery)
-    ) {
-      return false;
+    if (searchQuery) {
+      const searchLower = searchQuery.toLowerCase();
+      const codigoMatch = venta.codigo.toLowerCase().includes(searchLower);
+      const fechaMatch = new Date(venta.createdAt).toLocaleDateString('es-GT').includes(searchLower);
+      if (!codigoMatch && !fechaMatch) {
+        return false;
+      }
     }
 
     // Apply date filters
-    if (dateFilter === "today" && !isToday(venta.fecha)) {
-      return false;
+    if (dateFilter === "today") {
+      const today = new Date();
+      const ventaDate = new Date(venta.createdAt);
+      return (
+        ventaDate.getDate() === today.getDate() &&
+        ventaDate.getMonth() === today.getMonth() &&
+        ventaDate.getFullYear() === today.getFullYear()
+      );
     }
 
-    if (dateFilter === "custom" && !isInDateRange(venta.fecha)) {
-      return false;
+    if (dateFilter === "custom" && dateRange.from) {
+      const ventaDate = new Date(venta.createdAt);
+      const fromDate = new Date(dateRange.from);
+      fromDate.setHours(0, 0, 0, 0);
+      
+      if (dateRange.to) {
+        const toDate = new Date(dateRange.to);
+        toDate.setHours(23, 59, 59, 999);
+        return ventaDate >= fromDate && ventaDate <= toDate;
+      }
+      
+      return ventaDate >= fromDate;
     }
 
     return true;

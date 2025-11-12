@@ -35,16 +35,19 @@ export class ReportGenerator {
     }
   }
 
-  private generateReportData(reportType: string, data: ReportData): any[] {
+  private generateReportData(reportType: string, data: ReportData): Array<Record<string, string | number>> {
     const { ventas, productos, ventaDetalles, categorias } = data
 
     switch (reportType) {
       case "Ventas":
         return ventas.map((venta) => {
           const cliente = data.clientes?.find((c) => c.id === venta.clienteId)
+          // Use createdAt instead of fecha, and ensure we have a valid date
+          const fechaVenta = venta.createdAt || venta.fecha || new Date().toISOString();
           return {
             ID: venta.id,
-            Fecha: new Date(venta.fecha).toLocaleDateString(),
+            Fecha: new Date(fechaVenta).toLocaleDateString(),
+            Hora: new Date(fechaVenta).toLocaleTimeString(),
             Cliente: cliente?.nombre || `ID: ${venta.clienteId}`, 
             Total: formatCurrency(Number.parseFloat(venta.total)),
             Estado: "Completada",
@@ -64,26 +67,31 @@ export class ReportGenerator {
           "Valor Total": formatCurrency(Number.parseFloat(prod.precioCompra) * prod.stockTotal),
         }))
 
-      case "Productos Populares":
-        const productoVentas = ventaDetalles.reduce(
+      case "Productos Populares": {
+        interface ProductoVentas {
+          cantidad: number;
+          total: number;
+        }
+        
+        const productoVentas = ventaDetalles.reduce<Record<string, ProductoVentas>>(
           (acc, detalle) => {
-            const productoId = detalle.productoId
+            const productoId = detalle.productoId;
             if (!acc[productoId]) {
               acc[productoId] = {
                 cantidad: 0,
                 total: 0,
-              }
+              };
             }
-            acc[productoId].cantidad += detalle.cantidad
-            acc[productoId].total += Number.parseFloat(detalle.total)
-            return acc
+            acc[productoId].cantidad += detalle.cantidad;
+            acc[productoId].total += Number.parseFloat(detalle.total);
+            return acc;
           },
-          {} as Record<string, { cantidad: number; total: number }>,
-        )
+          {}
+        );
 
         return Object.entries(productoVentas)
           .map(([productoId, datos]) => {
-            const prod = productos.find((p) => p.id === Number.parseInt(productoId))
+            const prod = productos.find((p) => p.id === Number.parseInt(productoId));
             return {
               ID: productoId,
               Código: prod?.codigo || "N/A",
@@ -94,9 +102,10 @@ export class ReportGenerator {
               "Unidades Vendidas": datos.cantidad,
               "Total Vendido": formatCurrency(datos.total),
               "Precio Unitario": prod ? formatCurrency(Number.parseFloat(prod.precioVenta)) : "N/A",
-            }
+            };
           })
-          .sort((a, b) => b["Unidades Vendidas"] - a["Unidades Vendidas"])
+          .sort((a, b) => (b["Unidades Vendidas"] as number) - (a["Unidades Vendidas"] as number));
+      }
 
       case "Ventas por Categoría":
         return this.generateVentasPorCategoria(data)
@@ -106,7 +115,7 @@ export class ReportGenerator {
     }
   }
 
-  private generateVentasPorCategoria(data: ReportData): any[] {
+  private generateVentasPorCategoria(data: ReportData): Array<Record<string, string | number>> {
     const { ventas, productos, ventaDetalles, categorias } = data
 
     const totalVentas = ventas.reduce((acc, venta) => acc + Number.parseFloat(venta.total), 0)
@@ -168,13 +177,16 @@ export class ReportGenerator {
   }
 
   private formatDateForFileName(date: Date): string {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, "0")
-    const day = String(date.getDate()).padStart(2, "0")
-    const hours = String(date.getHours()).padStart(2, "0")
-    const minutes = String(date.getMinutes()).padStart(2, "0")
+    // Ensure we have a valid date
+    const safeDate = date instanceof Date ? date : new Date(date || new Date().toISOString());
+    
+    const year = safeDate.getFullYear();
+    const month = String(safeDate.getMonth() + 1).padStart(2, "0");
+    const day = String(safeDate.getDate()).padStart(2, "0");
+    const hours = String(safeDate.getHours()).padStart(2, "0");
+    const minutes = String(safeDate.getMinutes()).padStart(2, "0");
 
-    return `${year}${month}${day}_${hours}${minutes}`
+    return `${year}${month}${day}_${hours}${minutes}`;
   }
 }
 
