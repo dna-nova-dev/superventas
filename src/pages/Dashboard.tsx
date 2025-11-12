@@ -2082,28 +2082,18 @@ const Dashboard = () => {
                   <>
                     <div className="bg-card p-4 rounded-lg border shadow flex flex-col h-full">
                       <div className="flex-1">
-                        <div className="flex items-center justify-between h-full">
-                          <div>
-                            <p className="text-sm font-medium text-muted-foreground">Balance General</p>
-                            <p className="text-2xl font-bold">{formatCurrency(balanceGeneral)}</p>
-                          </div>
-                          <div className={`flex items-center text-lg ${balanceGeneral >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {balanceGeneral >= 0 ? '↑' : '↓'} {balanceTrend}
-                          </div>
+                        <div className="h-full">
+                          <p className="text-sm font-medium text-muted-foreground">Balance General</p>
+                          <p className="text-2xl font-bold">{formatCurrency(balanceGeneral)}</p>
                         </div>
                       </div>
                     </div>
                     
                     <div className="bg-card p-4 rounded-lg border shadow flex flex-col h-full">
                       <div className="flex-1">
-                        <div className="flex items-center justify-between h-full">
-                          <div>
-                            <p className="text-sm font-medium text-muted-foreground">Utilidades</p>
-                            <p className="text-2xl font-bold">{formatCurrency(utilidades)}</p>
-                          </div>
-                          <div className={`flex items-center text-lg ${utilidades >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {utilidades >= 0 ? '↑' : '↓'} {utilidadesTrend}
-                          </div>
+                        <div className="h-full">
+                          <p className="text-sm font-medium text-muted-foreground">Utilidades</p>
+                          <p className="text-2xl font-bold">{formatCurrency(utilidades)}</p>
                         </div>
                       </div>
                     </div>
@@ -2896,29 +2886,35 @@ function filtrarGastos(
 
   // Primero filtramos por caja si se especificó
   let gastosFiltrados = [...gastos];
+  
+  
   if (cajaId !== undefined && cajaId !== '') {
     const cajaIdNum = typeof cajaId === 'string' ? parseInt(cajaId, 10) : cajaId;
     if (!isNaN(cajaIdNum)) {
       // Asegurarse de que ambos sean del mismo tipo para la comparación
       gastosFiltrados = gastosFiltrados.filter(g => {
+        const gCajaId = g.cajaId !== null && g.cajaId !== undefined 
+          ? (typeof g.cajaId === 'string' ? parseInt(g.cajaId, 10) : g.cajaId)
+          : null;
+        
+        const match = gCajaId === cajaIdNum;
+        return match;
+      });
+      
+    }
+  }
+
+  // Aplicar el filtro de caja a los gastos
+  if (cajaId !== undefined && cajaId !== '') {
+    const cajaIdNum = typeof cajaId === 'string' ? parseInt(cajaId, 10) : cajaId;
+    if (!isNaN(cajaIdNum)) {
+      gastosFiltrados = gastosFiltrados.filter(g => {
+        // Asegurarse de que ambos sean del mismo tipo para la comparación
         const gCajaId = typeof g.cajaId === 'string' ? parseInt(g.cajaId as string, 10) : g.cajaId;
         return gCajaId === cajaIdNum;
       });
       
       console.log(`Gastos después de filtrar por caja ${cajaId}:`, gastosFiltrados.length);
-      
-      // Depuración: mostrar los IDs de caja de los gastos para verificar
-      if (gastosFiltrados.length === 0 && gastos.length > 0) {
-        console.log('IDs de caja de los gastos disponibles: ', 
-          gastos.map(g => ({
-            id: g.id, 
-            cajaId: g.cajaId, 
-            tipoCajaId: typeof g.cajaId,
-            fecha: g.createdAt,
-            fechaNormalizada: normalizeToDateString(g.fecha || g.createdAt)
-          }))
-        );
-      }
     }
   }
 
@@ -2926,56 +2922,38 @@ function filtrarGastos(
   const gastosFiltradosPorFecha = filtrarPorRangoFechas<Gasto>({
     items: gastosFiltrados,
     getDateFn: (g: Gasto) => {
-      // Usar la función de normalización que ya tenemos
-      const fechaNormalizada = normalizeToDateString(g.fecha || g.createdAt);
-      
-      // Si no se pudo normalizar la fecha, usar la fecha actual como fallback
-      if (!fechaNormalizada) {
-        console.warn('No se pudo normalizar la fecha del gasto', {
-          id: g.id,
-          fecha: g.fecha,
-          createdAt: g.createdAt
-        });
-        return new Date().toISOString().split('T')[0];
+      try {
+        // Usar la fecha del gasto o la fecha de creación como respaldo
+        const fecha = g.fecha || g.createdAt;
+        
+        // Asegurarse de que la fecha sea un string o un objeto Date
+        const fechaValida = typeof fecha === 'string' || fecha instanceof Date ? fecha : '';
+        
+        // Intentar parsear la fecha
+        const fechaObj = new Date(fechaValida);
+        if (isNaN(fechaObj.getTime())) {
+          // Fecha inválida manejada silenciosamente
+          return ''; // Devolver cadena vacía para que el filtro la maneje
+        }
+        
+        // Devolver la fecha en formato YYYY-MM-DD
+        const year = fechaObj.getFullYear();
+        const month = String(fechaObj.getMonth() + 1).padStart(2, '0');
+        const day = String(fechaObj.getDate()).padStart(2, '0');
+        
+        return `${year}-${month}-${day}`;
+      } catch (error) {
+        // Error manejado silenciosamente
+        return ''; // Devolver cadena vacía en caso de error
       }
-      
-      // Devolver la fecha ya normalizada como string YYYY-MM-DD
-      return fechaNormalizada;
     },
     periodo,
     start,
     end
   });
 
-  console.log(`Gastos filtrados: ${gastosFiltradosPorFecha.length} de ${gastos.length} (filtrados por caja: ${cajaId || 'todas'})`);
-  
-  // Si no hay gastos en el rango, mostrar los últimos 5 como referencia
-  if (gastosFiltradosPorFecha.length === 0 && gastos.length > 0) {
-    console.warn('No se encontraron gastos con los filtros especificados. Últimos 5 gastos:', 
-      gastos.slice(0, 5).map(g => ({
-        id: g.id,
-        monto: g.monto,
-        fecha: g.fecha || g.createdAt,
-        fechaNormalizada: normalizeToDateString(g.fecha || g.createdAt),
-        descripcion: g.descripcion,
-        empresaId: g.empresaId,
-        cajaId: g.cajaId,
-        tipoCajaId: typeof g.cajaId
-      }))
-    );
-    
-    // Mostrar información de las fechas de los filtros
-    if (start && end) {
-      console.log('Rango de fechas del filtro:', {
-        start: start instanceof Date ? start.toISOString() : start,
-        end: end instanceof Date ? end.toISOString() : end,
-        startLocal: normalizeToDateString(start),
-        endLocal: normalizeToDateString(end)
-      });
-    }
   
   return gastosFiltradosPorFecha;
-}
 }
 
 export default Dashboard;
