@@ -401,8 +401,12 @@ const Ventas = () => {
       };
 
       addInfoLine("Código:", venta.codigo);
-      addInfoLine("Fecha:", new Date(venta.fecha).toLocaleDateString("es-GT"));
-      addInfoLine("Hora:", venta.hora);
+      // Usar createdAt que contiene la fecha y hora real de la venta
+      const fechaVenta = new Date(venta.createdAt);
+      const fechaFormateada = fechaVenta.toLocaleDateString('es-GT');
+      const horaFormateada = fechaVenta.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
+      addInfoLine("Fecha:", fechaFormateada);
+      addInfoLine("Hora:", horaFormateada);
       addInfoLine(
         "Cliente:",
         cliente ? `${cliente.nombre} ${cliente.apellido}` : "No encontrado"
@@ -560,7 +564,7 @@ const Ventas = () => {
           <div className="flex justify-between">
             <span className="text-muted-foreground">Fecha:</span>
             <span>
-              {new Date(deleteVenta.fecha).toLocaleDateString("es-GT")}
+              {deleteVenta.fecha}
             </span>
           </div>
           <div className="flex justify-between">
@@ -647,11 +651,11 @@ const Ventas = () => {
           </div>
           <div className="flex justify-between">
             <span>Fecha:</span>
-            <span>{new Date(venta.fecha).toLocaleDateString("es-GT")}</span>
+            <span>{new Date(venta.createdAt).toLocaleDateString('es-GT')}</span>
           </div>
           <div className="flex justify-between">
             <span>Hora:</span>
-            <span>{venta.hora}</span>
+            <span>{new Date(venta.createdAt).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}</span>
           </div>
           <div className="flex justify-between">
             <span>Cliente:</span>
@@ -1013,7 +1017,7 @@ const Ventas = () => {
                             Fecha:
                           </span>
                           <span className="text-sm font-medium">
-                            {new Date(venta.fecha).toLocaleDateString("es-GT")}
+                            {venta.fecha}
                           </span>
                         </div>
                         <div className="flex justify-between">

@@ -273,14 +273,19 @@ const Compras = () => {
     },
     {
       header: "Fecha",
-      accessor: (compra: Compra) => (
-        <div>
-          <div className="font-medium">
-            {new Date(compra.fecha).toLocaleDateString("es-GT")}
+      accessor: (compra: Compra) => {
+        const fecha = new Date(compra.createdAt);
+        return (
+          <div>
+            <div className="font-medium">
+              {fecha.toLocaleDateString("es-GT")}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {fecha.toLocaleTimeString("es-GT", { hour: '2-digit', minute: '2-digit' })}
+            </div>
           </div>
-          <div className="text-xs text-muted-foreground">{compra.hora}</div>
-        </div>
-      ),
+        );
+      },
     },
     {
       header: "Proveedor",
@@ -438,7 +443,7 @@ const Compras = () => {
       doc.setFont("helvetica", "bold");
       doc.text("Fecha:", marginX, y);
       doc.setFont("helvetica", "normal");
-      const formattedDate = new Date(compra.fecha).toLocaleDateString('es-GT', {
+      const formattedDate = new Date(compra.createdAt).toLocaleDateString('es-GT', {
         year: 'numeric',
         month: 'long',
         day: 'numeric'
@@ -1041,11 +1046,11 @@ const Compras = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="font-medium text-muted-foreground">Fecha:</span>
-                        <span>{new Date(selectedCompraDetails.compra.fecha).toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                        <span>{new Date(selectedCompraDetails.compra.createdAt).toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="font-medium text-muted-foreground">Hora:</span>
-                        <span>{selectedCompraDetails.compra.hora}</span>
+                        <span>{new Date(selectedCompraDetails.compra.createdAt).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
                       <div className="flex justify-between pt-2 border-t mt-3">
                         <span className="font-semibold text-muted-foreground">Total:</span>
