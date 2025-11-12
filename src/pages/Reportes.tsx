@@ -208,17 +208,34 @@ const Reportes = () => {
   }, [currentEmpresa]);
 
   const loadCajas = useCallback(async () => {
+    if (!empresaId) {
+      console.warn('No hay una empresa seleccionada para cargar las cajas');
+      return;
+    }
+
     try {
+      console.log('Cargando cajas para la empresa:', empresaId);
       const allCajas = await getAllCajas();
-      setCajas(allCajas);
+      
+      // Filtrar cajas por empresaId
+      const cajasFiltradas = allCajas.filter(caja => caja.empresaId === empresaId);
+      
+      console.log('Cajas cargadas:', cajasFiltradas);
+      setCajas(cajasFiltradas);
+      
+      // Seleccionar la primera caja por defecto si hay cajas disponibles
+      if (cajasFiltradas.length > 0 && !selectedCaja) {
+        setSelectedCaja(cajasFiltradas[0].id.toString());
+      }
     } catch (error) {
+      console.error('Error al cargar cajas:', error);
       toast({
         title: "Error",
         description: "No se pudieron cargar las cajas",
         variant: "destructive",
       });
     }
-  }, [toast]);
+  }, [empresaId, toast, selectedCaja]);
 
   const loadInitialData = useCallback(async () => {
     try {
@@ -263,10 +280,18 @@ const Reportes = () => {
     }
   }, [toast, currentEmpresa]);
 
+  // Cargar cajas cuando cambie el ID de la empresa
   useEffect(() => {
-    loadCajas();
+    if (empresaId) {
+      console.log('Empresa cambiada, cargando cajas para empresa:', empresaId);
+      loadCajas();
+    }
+  }, [empresaId, loadCajas]);
+
+  // Cargar datos iniciales
+  useEffect(() => {
     loadInitialData();
-  }, [loadCajas, loadInitialData]);
+  }, [loadInitialData]);
 
   const filterVentasByPeriod = (period: string): Venta[] => {
     const today = new Date();
@@ -760,59 +785,6 @@ const Reportes = () => {
               }
             />
           </motion.div>
-        </motion.div>
-
-        <motion.div
-          variants={itemVariants}
-          className="bg-transparent rounded-xl border shadow-sm overflow-hidden"
-        >
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="text-xl font-semibold mb-2">Resumen</h2>
-                <p className="text-sm text-muted-foreground">
-                  Resumen de gastos y ventas por caja
-                </p>
-              </div>
-            </div>
-            <div className="h-[300px] flex justify-between gap-x-[20px]">
-              <Select value={selectedCaja} onValueChange={setSelectedCaja}>
-                <SelectTrigger className="w-[180px] bg-transparent text-foreground">
-                  <SelectValue placeholder="Seleccionar caja" />
-                </SelectTrigger>
-                <SelectContent>
-                  {cajas.map((opt) => (
-                    <SelectItem key={opt.numero} value={opt.numero.toString()}>
-                      Caja {opt.numero}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="h-full w-full g-transparent rounded-xl border px-[20px]">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-3 font-medium">Categoría</th>
-                      <th className="text-right py-3 font-medium">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredVentas.map((item) => (
-                      <tr
-                        key={`${item.id}-${item.fecha}`}
-                        className="border-b last:border-0 hover:bg-muted/50"
-                      >
-                        <td className="py-3">ventas</td>
-                        <td className="py-3 text-right font-medium">
-                          {formatCurrency(item.total)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
         </motion.div>
 
         <motion.div
