@@ -707,8 +707,10 @@ export const VentaForm = () => {
 
       // Obtener fecha y hora actual
       const now = new Date();
-      const fecha = now.toISOString().split("T")[0];
+      // Formato YYYY-MM-DD en hora local
+      const fecha = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       
+      // Usar la hora local directamente
       const hora = formatTime(now);
 
       // Crear la venta con estado 'pendiente'
@@ -887,7 +889,7 @@ export const VentaForm = () => {
           total: total.toString(),
           pago: pago.toString(),
           cambio: Math.max(0, cambio).toString(),
-          // Usar la fecha local sin conversión a UTC
+          // Usar la fecha local
           fecha: (() => {
             const now = new Date();
             const year = now.getFullYear();
@@ -896,7 +898,7 @@ export const VentaForm = () => {
             return `${year}-${month}-${day}`;
           })(),
           nombreVendedor: currentUser.nombre || 'Vendedor',
-          // Usar la hora local
+          // Usar la hora local actual
           hora: formatTime(new Date()),
           pagado: '1', // Using '1' as string to match CreateVenta interface, will be converted to decimal by the database
           cajaId: selectedCajaId || 1, // Usar la caja seleccionada o 1 como respaldo

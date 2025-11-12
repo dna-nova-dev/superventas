@@ -764,14 +764,21 @@ const Ventas = () => {
     },
     {
       header: "Fecha",
-      accessor: (venta: Venta) => (
-        <div>
-          <div className="font-medium">
-            {new Date(venta.fecha).toLocaleDateString("es-GT")}
+      accessor: (venta: Venta) => {
+        // Usar createdAt que viene en UTC y convertirlo a hora local
+        const date = new Date(venta.createdAt);
+        const localDate = date.toLocaleDateString('es-GT');
+        const localTime = date.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        
+        return (
+          <div>
+            <div className="font-medium">
+              {localDate}
+            </div>
+            <div className="text-xs text-muted-foreground">{localTime}</div>
           </div>
-          <div className="text-xs text-muted-foreground">{venta.hora}</div>
-        </div>
-      ),
+        );
+      },
     },
     {
       header: "Cliente",
