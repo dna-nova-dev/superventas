@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { useNavigate, useLocation } from "react-router-dom"; // Import useLocation
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   Search,
   X,
@@ -19,22 +19,33 @@ import { getAllProductos, getProductoById, updateProducto } from "@/services/pro
 import { getAllCategorias } from "@/services/categoriaService";
 import { getAllClientes } from "@/services/clienteService";
 import { getVentas, createVenta, updateVenta } from "@/services/ventaService";
-import { 
-  getVentaPendienteById, 
-  getVentaPendienteByCodigo, 
-  createVentaPendiente, 
-  updateVentaPendiente, 
-  deleteVentaPendiente, 
-  convertirAVentaPendiente, 
+import {
+  getVentaPendienteById,
+  getVentaPendienteByCodigo,
+  createVentaPendiente,
+  updateVentaPendiente,
+  deleteVentaPendiente,
+  convertirAVentaPendiente,
   getVentasPendientes,
-  completarVentaPendiente
+  actualizarYFinalizarVenta
 } from "@/services/ventaPendienteService";
 import { createVentaDetalle } from "@/services/ventaDetalleService";
-import type { CreateVentaDetalle } from "@/types";
 import { ApiService } from "@/services/api.service";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/data/mockData";
-import type { Producto, Categoria, Cliente, VentaDetalle } from "@/types";
+import { format } from 'date-fns';
+
+// Import types from @/types
+import type {
+  ProductoVentaPendiente,
+  VentaPendiente as ApiVentaPendiente,
+  VentaDetalle,
+  Producto,
+  Categoria,
+  Cliente,
+  CreateVentaPendiente,
+  CreateVentaDetalle
+} from "@/types";
 
 // Constante para el ID de cliente cuando no hay cliente seleccionado
 const CLIENTE_SIN_REGISTRAR_ID = 0;
@@ -61,23 +72,33 @@ import {
 import { DeleteDialog } from "@/components/dialogs/DeleteDialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-// Importar tipos necesarios
-import type {
-  ProductoVentaPendiente as ApiProductoVentaPendiente,
-  VentaPendiente as ApiVentaPendiente,
-} from "@/types";
+// Alias local para el tipo de producto en la venta
+type ProductoVenta = Omit<VentaDetalle, 'createdAt' | 'updatedAt' | 'deletedAt'> & {
+  producto?: Producto | null;
+  nombre?: string;
+  precioVenta: string | number;
+  total: string | number;
+  precioCompra: string | number;
+  // Make these fields optional for frontend convenience
+  empresaId?: number;
+  ventaCodigo?: string;
+};
 
-// Interfaz para los productos en una venta pendiente
-interface ProductoVentaPendiente {
-  id: number;
-  productoId: number;
-  nombre: string;
+interface DetalleVenta {
+  id?: number;
   cantidad: number;
   precioVenta: string;
+  precioCompra: string;
   total: string;
-  descripcion?: string;
-  // Propiedad opcional para la UI
-  producto?: Producto | null;
+  descripcion: string;
+  productoId: number;
+  empresaId: number;
+  ventaId?: number;
+  venta_codigo?: string; // Código de la venta a la que pertenece el detalle
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  producto?: Producto;
 }
 
 interface VentaPendiente {
@@ -86,14 +107,25 @@ interface VentaPendiente {
   clienteName: string;
   cliente_name: string;
   productos: ProductoVentaPendiente[];
+  detalles?: DetalleVenta[]; // Add detalles property
   total: string;
   estado: "pendiente" | "completada";
   fecha: string;
+  hora?: string;
   usuarioId: number;
   empresaId: number;
   nombreVendedor: string;
   // Propiedad opcional para la UI
   producto?: Producto | null;
+  // Campos adicionales para el backend
+  pagado?: string;
+  cambio?: string;
+  cajaId?: number;
+  codigo?: string;
+  // Campos adicionales para manejo de fechas
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
 }
 
 interface ProductoVentaResponse {
@@ -146,7 +178,7 @@ export const VentaForm = () => {
   const { toast } = useToast();
   const { currentUser, empresaId: empresaIdFromAuth } = useAuth();
   const navigate = useNavigate();
-  
+
   // Add fallback for empresaId and log its value
   const empresaId = empresaIdFromAuth || 1; // Default to 1 if not available
   console.log('Current empresaId:', empresaId);
@@ -221,7 +253,7 @@ export const VentaForm = () => {
           mod.getAllCajas(empresaId)
         );
         setCajas(cajasData);
-        
+
         // Si el usuario tiene una caja asignada, seleccionarla automáticamente
         if (currentUser?.cajaId) {
           // Verificar si la caja del usuario existe en las cajas cargadas
@@ -241,7 +273,7 @@ export const VentaForm = () => {
         });
       }
     };
-    
+
     fetchCajas();
   }, [empresaId, toast, currentUser?.cajaId]);
 
@@ -252,7 +284,7 @@ export const VentaForm = () => {
     setLoadingVentasPendientes(true);
     try {
       console.log('Cargando ventas pendientes...');
-      
+
       // Usar la función getVentasPendientes que ya maneja el filtrado por estado
       const ventas = await getVentasPendientes(empresaId) as unknown as Array<{
         id: number;
@@ -307,9 +339,9 @@ export const VentaForm = () => {
           email?: string;
         };
       }>;
-      
+
       console.log('Ventas pendientes recibidas:', ventas);
-      
+
       // Mapear los datos de la API al formato local
       const ventasMapeadas = ventas.map((venta) => {
         // Parse productos from detalles array
@@ -322,11 +354,11 @@ export const VentaForm = () => {
             productoId: detalle.productoId || 0,
             nombre: detalle.producto?.nombre || detalle.descripcion || "Producto sin nombre",
             cantidad: detalle.cantidad || 1,
-            precioVenta: typeof detalle.precioVenta === 'number' 
-              ? detalle.precioVenta.toString() 
+            precioVenta: typeof detalle.precioVenta === 'number'
+              ? detalle.precioVenta.toString()
               : detalle.precioVenta || "0",
-            total: typeof detalle.total === 'number' 
-              ? detalle.total.toString() 
+            total: typeof detalle.total === 'number'
+              ? detalle.total.toString()
               : detalle.total || "0",
             descripcion: detalle.descripcion || "",
             producto: detalle.producto ? {
@@ -338,11 +370,11 @@ export const VentaForm = () => {
               nombre: detalle.producto.nombre,
               stockTotal: typeof detalle.producto.stock === 'number' ? detalle.producto.stock : 0,
               tipoUnidad: "unidad", // Default value
-              precioCompra: typeof detalle.producto.precioCompra === 'number' 
-                ? detalle.producto.precioCompra.toString() 
+              precioCompra: typeof detalle.producto.precioCompra === 'number'
+                ? detalle.producto.precioCompra.toString()
                 : detalle.producto.precioCompra || "0",
-              precioVenta: typeof detalle.producto.precioVenta === 'number' 
-                ? detalle.producto.precioVenta.toString() 
+              precioVenta: typeof detalle.producto.precioVenta === 'number'
+                ? detalle.producto.precioVenta.toString()
                 : detalle.producto.precioVenta || "0",
               marca: "", // Default value
               modelo: "", // Default value
@@ -386,15 +418,15 @@ export const VentaForm = () => {
         }
 
         // Obtener el nombre del cliente de la relación o de los campos planos
-        const nombreCliente = venta.cliente 
+        const nombreCliente = venta.cliente
           ? `${venta.cliente.nombre}${venta.cliente.apellido ? ' ' + venta.cliente.apellido : ''}`
           : venta.clienteName || venta.cliente_name || "Cliente no especificado";
-          
+
         // Obtener el nombre del vendedor de la relación de usuario o del campo plano
         const nombreVendedor = venta.usuario
           ? `${venta.usuario.nombre}${venta.usuario.apellido ? ' ' + venta.usuario.apellido : ''}`
           : venta.nombreVendedor || "";
-          
+
         return {
           id: venta.id,
           clienteId: venta.clienteId,
@@ -402,10 +434,12 @@ export const VentaForm = () => {
           cliente_name: nombreCliente,
           productos: productos,
           total: typeof venta.total === 'number' ? venta.total.toString() : venta.total,
-          estado: (venta.estado === "pendiente" || venta.estado === "completada" 
-            ? venta.estado 
+          estado: (venta.estado === "pendiente" || venta.estado === "completada"
+            ? venta.estado
             : "pendiente") as 'pendiente' | 'completada',
-          fecha: venta.fecha || new Date().toISOString(),
+          fecha: venta.fecha || format(new Date(), 'yyyy-MM-dd'),
+          hora: venta.hora || format(new Date(), 'HH:mm:ss'),
+          createdAt: 'createdAt' in venta ? venta.createdAt : new Date().toISOString(),
           usuarioId: venta.usuarioId || 0,
           empresaId: venta.empresaId || empresaId || 0,
           nombreVendedor: nombreVendedor
@@ -467,10 +501,11 @@ export const VentaForm = () => {
     const matchesSearch =
       producto.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (producto.codigo &&
-        producto.codigo.toLowerCase().includes(searchTerm.toLowerCase())); // Added check for codigo existence
-    const matchesCategory =
-      selectedCategorias.length === 0 ||
-      selectedCategorias.includes(producto.categoriaId || 0); // Use categoriaId and handle potential null
+        producto.codigo.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    const matchesCategory = selectedCategorias.length === 0 ||
+      (producto.categoriaId && selectedCategorias.includes(producto.categoriaId));
+
     return matchesSearch && matchesCategory;
   });
 
@@ -483,10 +518,10 @@ export const VentaForm = () => {
 
     // Calcular la cantidad que se intenta agregar
     const cantidadAAgregar = productoExistente ? productoExistente.cantidad + 1 : 1;
-    
+
     // Verificar stock disponible
     const { suficiente, mensaje } = verificarStockDisponible(producto, cantidadAAgregar);
-    
+
     if (!suficiente) {
       toast({
         title: "Error de stock",
@@ -506,27 +541,45 @@ export const VentaForm = () => {
         )
       );
     } else {
-      // Si no existe, agregarlo al carrito
-      setProductosSeleccionados((prev) => [
-        ...prev,
-        {
-          producto,
-          cantidad: 1,
-          precio: producto.precioVenta.toString(),
-        },
-      ]);
+      // Si no existe, verificar si hay un producto con el mismo nombre pero distinto ID
+      const productoConMismoNombre = productosSeleccionados.find(
+        p => p.producto.nombre.toLowerCase() === producto.nombre.toLowerCase()
+      );
+
+      if (productoConMismoNombre) {
+        // Si encontramos un producto con el mismo nombre, actualizamos ese en lugar de agregar uno nuevo
+        const nuevaCantidad = productoConMismoNombre.cantidad + 1;
+        setProductosSeleccionados((prev) =>
+          prev.map((p) =>
+            p.producto.id === productoConMismoNombre.producto.id
+              ? { ...p, cantidad: nuevaCantidad }
+              : p
+          )
+        );
+      } else {
+        // Si no hay ningún producto con el mismo nombre, lo agregamos como nuevo
+        setProductosSeleccionados((prev) => [
+          ...prev,
+          {
+            producto,
+            cantidad: 1,
+            precio: producto.precioVenta.toString(),
+          },
+        ]);
+      }
     }
   };
 
   // Actualizar cantidad de producto
   const actualizarCantidad = (productoId: number, cantidad: number) => {
+    // ... (rest of the code remains the same)
     if (cantidad < 1) return;
 
     const producto = productos.find((p) => p.id === productoId);
     if (!producto) return;
 
     const { suficiente, mensaje } = verificarStockDisponible(producto, cantidad);
-    
+
     if (!suficiente) {
       toast({
         title: "Error de stock",
@@ -548,7 +601,7 @@ export const VentaForm = () => {
 
     const nuevaCantidad = productoEnCarrito.cantidad + 1;
     const { suficiente, mensaje } = verificarStockDisponible(producto, nuevaCantidad);
-    
+
     if (!suficiente) {
       toast({
         title: "Error de stock",
@@ -569,12 +622,12 @@ export const VentaForm = () => {
 
   // Función para eliminar un producto del carrito
   const eliminarProducto = (productoId: number) => {
-    setProductosSeleccionados(prev => 
+    setProductosSeleccionados(prev =>
       prev.filter(p => p.producto.id !== productoId)
     );
   };
 
-  
+
   // Función para verificar el stock disponible
   const verificarStockDisponible = (producto: Producto, cantidadDeseada: number): { suficiente: boolean; mensaje: string } => {
     const stockDisponible = Number(producto.stockTotal) || 0;
@@ -582,9 +635,9 @@ export const VentaForm = () => {
       return { suficiente: false, mensaje: `No hay stock disponible para ${producto.nombre}` };
     }
     if (cantidadDeseada > stockDisponible) {
-      return { 
-        suficiente: false, 
-        mensaje: `Stock insuficiente para ${producto.nombre}. Stock disponible: ${stockDisponible}` 
+      return {
+        suficiente: false,
+        mensaje: `Stock insuficiente para ${producto.nombre}. Stock disponible: ${stockDisponible}`
       };
     }
     return { suficiente: true, mensaje: '' };
@@ -618,40 +671,69 @@ export const VentaForm = () => {
   // Cargar una venta pendiente desde la base de datos
   const cargarVentaPendiente = async (venta: VentaPendiente) => {
     try {
-      // Convertir los detalles de la venta al formato esperado por el formulario
-      const productosSeleccionados = venta.productos.map((item) => {
-        const precioVenta =
-          typeof item.precioVenta === "string"
-            ? parseFloat(item.precioVenta)
-            : item.precioVenta || 0;
+      // Usar un mapa para agrupar productos por nombre (sin importar mayúsculas/minúsculas)
+      const productosPorNombre = new Map<string, ProductoSeleccionado>();
+
+      // Procesar cada producto de la venta pendiente
+      venta.productos.forEach((item) => {
+        // Usar el producto del detalle si existe, o crear uno básico
+        const productoDetalle = item.producto || {} as Producto;
+        const productoId = item.productoId || item.id;
+
+        const precioVenta = typeof item.precioVenta === 'string'
+          ? parseFloat(item.precioVenta)
+          : item.precioVenta || 0;
+
+        const precioCompra = (item as any).precioCompra || (productoDetalle.precioCompra || '0');
+
+        const nombreNormalizado = (item.nombre || productoDetalle.nombre || `Producto ${productoId}`)
+          .toLowerCase()
+          .trim();
 
         const producto: Producto = {
-          id: item.productoId,
-          nombre: item.nombre || `Producto ${item.productoId}`,
+          id: productoId,
+          nombre: item.nombre || productoDetalle.nombre || `Producto ${productoId}`,
           precioVenta: precioVenta.toString(),
-          stockTotal: 0,
-          tipoUnidad: "unidad",
-          precioCompra: "0",
-          marca: "",
-          modelo: "",
-          estado: "activo",
-          categoriaId: 1,
-          empresaId: empresaId || 1,
-          codigo: `PROD-${item.productoId}`,
-          foto: "",
-          createdAt: new Date().toISOString(),
+          precioCompra: precioCompra.toString(),
+          stockTotal: productoDetalle.stockTotal || 0,
+          tipoUnidad: productoDetalle.tipoUnidad || 'unidad',
+          descripcion: item.descripcion || productoDetalle.descripcion || '',
+          marca: productoDetalle.marca || '',
+          modelo: productoDetalle.modelo || '',
+          estado: 'activo',
+          categoriaId: productoDetalle.categoriaId || 1,
+          empresaId: productoDetalle.empresaId || empresaId || 1,
+          codigo: productoDetalle.codigo || `PROD-${productoId}`,
+          foto: productoDetalle.foto || '',
+          createdAt: productoDetalle.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           deletedAt: null,
         };
 
-        return {
+        const productoSeleccionado: ProductoSeleccionado = {
           producto,
           cantidad: item.cantidad || 1,
           precio: precioVenta.toString(),
         };
+
+        // Verificar si ya existe un producto con el mismo nombre
+        const existente = productosPorNombre.get(nombreNormalizado);
+        if (existente) {
+          // Si existe, sumar las cantidades
+          existente.cantidad += item.cantidad || 1;
+          // Actualizar el precio al del último producto (o podrías promediarlos si prefieres)
+          existente.precio = precioVenta.toString();
+        } else {
+          // Si no existe, agregarlo al mapa
+          productosPorNombre.set(nombreNormalizado, productoSeleccionado);
+        }
       });
 
-      setProductosSeleccionados(productosSeleccionados);
+      // Convertir el mapa de vuelta a un array
+      const productosUnificados = Array.from(productosPorNombre.values());
+
+      // Actualizar el estado con los productos unificados
+      setProductosSeleccionados(productosUnificados);
       // Buscar el cliente por ID si existe
       const cliente = venta.clienteId ? clientes.find(c => c.id === venta.clienteId) || null : null;
       setSelectedCliente(cliente);
@@ -703,54 +785,428 @@ export const VentaForm = () => {
       // Obtener el usuario autenticado
       const authUser = currentUser;
       const nombreVendedor = authUser.nombre || "Vendedor";
-      const codigoVenta = `V-${Date.now()}`;
+
+      // Obtener el código de la venta actual si estamos editando
+      let codigoVenta = `V-${Date.now()}`; // Valor por defecto
+      let ventaActual;
+
+      if (editingPendingSaleId) {
+        try {
+          ventaActual = await getVentaPendienteById(editingPendingSaleId);
+          if (ventaActual?.codigo) {
+            codigoVenta = ventaActual.codigo;
+          }
+        } catch (error) {
+          console.error('Error al obtener la venta actual:', error);
+        }
+      }
 
       // Obtener fecha y hora actual
       const now = new Date();
       // Formato YYYY-MM-DD en hora local
       const fecha = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      
+
       // Usar la hora local directamente
       const hora = formatTime(now);
 
-      // Crear la venta con estado 'pendiente'
-      const venta = await createVenta({
-        codigo: codigoVenta,
-        empresaId,
-        clienteId: selectedCliente?.id || null,
-        usuarioId: authUser.id || 1,
-        cajaId: selectedCajaId || 1,
-        estado: "pendiente",
-        fecha,
-        hora,
-        detalles: productosSeleccionados.map((p) => ({
-          cantidad: p.cantidad,
-          precioCompra: p.producto.precioCompra || "0",
-          precioVenta: p.precio, // Use the string value directly
-          total: (p.cantidad * parseFloat(p.precio)).toString(),
+      // Crear los detalles de la venta en el formato que espera el backend
+      const detallesVenta = productosSeleccionados.map((p) => {
+        // Asegurarse de que el ID del producto sea correcto
+        const productoId = p.producto.id;
+        const precioVenta = p.precio;
+        const precioCompra = p.producto.precioCompra || '0.00';
+        const cantidad = p.cantidad;
+        const total = (cantidad * parseFloat(precioVenta)).toFixed(2);
+
+        return {
+          id: 0, // 0 para nuevos detalles, se asignará ID en el backend
+          cantidad: cantidad,
+          precioVenta: precioVenta,
+          precioCompra: precioCompra,
+          total: total,
           descripcion: p.producto.nombre,
-          ventaCodigo: codigoVenta,
-          productoId: p.producto.id,
-          empresaId: empresaId || 1,
-        })),
-        pagado: "0",
-        cambio: "0",
-        total: total.toString(),
+          productoId: productoId, // Usar el ID del producto, no del detalle
+          empresaId: empresaId,
+          ventaId: editingPendingSaleId || 0, // 0 si es nueva venta
+          venta_codigo: codigoVenta, // Incluir el código de venta
+          ventaCodigo: codigoVenta // Incluir también en formato camelCase para compatibilidad
+        };
       });
+
+      // Crear un mapa para rastrear los productos por ID de producto
+      const productosPorProductoId = new Map<number, ProductoVentaPendiente>();
+
+      // Primero, procesar los productos existentes en la venta actual (si estamos editando)
+      if (editingPendingSaleId) {
+        try {
+          const ventaActual = await getVentaPendienteById(editingPendingSaleId);
+          if (ventaActual.productos && Array.isArray(ventaActual.productos)) {
+            ventaActual.productos.forEach((p: any) => {
+              try {
+                // Extraer valores con valores por defecto seguros
+                const productoId = (p.productoId || p.id || 0) as number;
+                const nombre = (p.nombre || p.descripcion || `Producto ${productoId}`).toString();
+                const descripcion = (p.descripcion || nombre).toString();
+                const cantidad = Number(p.cantidad) || 0;
+                const precioVenta = (p.precioVenta || '0').toString();
+                const total = (p.total || '0').toString();
+                const precioCompra = (p.precioCompra || '0').toString();
+
+                // Crear el objeto producto con todos los campos requeridos
+                const producto: ProductoVentaPendiente = {
+                  id: Number(p.id) || 0,
+                  productoId: productoId,
+                  nombre: nombre,
+                  cantidad: cantidad,
+                  precioVenta: precioVenta,
+                  total: total,
+                  descripcion: descripcion,
+                  precioCompra: precioCompra,
+                  // @ts-ignore - Ignoramos el error de tipo para la propiedad producto
+                  producto: p.producto || null
+                };
+
+                // Agregar propiedades opcionales si existen
+                if (p.createdAt) producto.createdAt = p.createdAt;
+                if (p.updatedAt) producto.updatedAt = p.updatedAt;
+                if ('deletedAt' in p) producto.deletedAt = p.deletedAt;
+                if (p.empresaId) producto.empresaId = Number(p.empresaId);
+
+                productosPorProductoId.set(productoId, producto);
+              } catch (error) {
+                console.error('Error al procesar producto:', p, error);
+              }
+            });
+          }
+        } catch (error) {
+          console.error('Error al obtener la venta actual:', error);
+        }
+      }
+
+      // Procesar los productos seleccionados
+      const productosSeleccionadosMap = new Map<number, ProductoSeleccionado>();
+
+      // Agrupar productos seleccionados por ID de producto para sumar cantidades
+      productosSeleccionados.forEach((p) => {
+        const productoId = p.producto.id;
+        const existente = productosSeleccionadosMap.get(productoId);
+
+        if (existente) {
+          existente.cantidad += p.cantidad;
+        } else {
+          productosSeleccionadosMap.set(productoId, { ...p });
+        }
+      });
+
+      // Combinar con los productos existentes
+      productosSeleccionadosMap.forEach((p) => {
+        // Obtener el ID del producto y asegurarse de que sea un string
+        const productoId = String(p.producto.id);
+
+        // Convertir el ID a número de forma segura
+        const productoIdNum = parseInt(productoId, 10);
+
+        // Asegurarse de que el ID sea un número válido
+        if (isNaN(productoIdNum) || productoIdNum <= 0) {
+          console.error('ID de producto no válido:', p.producto.id);
+          return; // Saltar este producto si el ID no es válido
+        }
+
+        // Función auxiliar para convertir a número de forma segura
+        const safeToNumber = (value: any): number => {
+          if (value === null || value === undefined) return 0;
+          if (typeof value === 'number') return value;
+          if (typeof value === 'string') return parseFloat(value) || 0;
+          return Number(value) || 0;
+        };
+
+        // Función auxiliar para convertir a string de forma segura
+        const safeToString = (value: any): string => {
+          if (value === null || value === undefined) return '0';
+          if (typeof value === 'string') return value;
+          if (typeof value === 'number') return value.toString();
+          return String(value);
+        };
+
+        const productoExistente = productosPorProductoId.get(productoIdNum);
+
+        if (productoExistente) {
+          // Si el producto ya existe, actualizamos la cantidad y el total
+          productoExistente.cantidad += p.cantidad;
+
+          const precioExistente = safeToNumber(productoExistente.precioVenta);
+          const totalExistente = safeToNumber(productoExistente.total);
+          const precioNuevo = safeToNumber(p.precio);
+
+          productoExistente.total = (totalExistente + (p.cantidad * precioNuevo)).toFixed(2);
+        } else {
+          // Función auxiliar para convertir a string de forma segura
+          const safeToString = (value: any): string => {
+            if (value === null || value === undefined) return '0';
+            if (typeof value === 'string') return value;
+            if (typeof value === 'number') return value.toString();
+            if (typeof value === 'boolean') return value ? '1' : '0';
+            return String(value);
+          };
+
+          // Si es un producto nuevo, lo agregamos al mapa
+          const precioVenta = safeToString(p.precio);
+          const precioCompra = p.producto.precioCompra ? safeToString(p.producto.precioCompra) : '0';
+
+          // Asegurarse de que el ID sea un número
+          const productoIdNum = parseInt(productoId, 10);
+
+          productosPorProductoId.set(productoIdNum, {
+            id: 0, // Se asignará un nuevo ID en el backend
+            nombre: p.producto.nombre,
+            cantidad: p.cantidad,
+            precioVenta: precioVenta,
+            total: (p.cantidad * parseFloat(precioVenta)).toFixed(2),
+            descripcion: p.producto.nombre,
+            precioCompra: precioCompra,
+            productoId: productoIdNum, // Usar el ID numérico
+            producto: p.producto
+          });
+        }
+      });
+
+      // Convertir el mapa a array para productosVenta, asegurando que todos los campos requeridos estén presentes
+      const productosVenta: ProductoVentaPendiente[] = Array.from(productosPorProductoId.values()).map(p => {
+        // Asegurarse de que productoId siempre tenga un valor válido
+        const productoId = p.productoId || (p.producto?.id || 0);
+        const nombre = p.nombre || p.producto?.nombre || `Producto ${productoId || 'desconocido'}`;
+        const descripcion = p.descripcion || nombre;
+        const precioVenta = p.precioVenta || '0';
+        const total = p.total || '0';
+        const cantidad = p.cantidad || 0;
+        const precioCompra = p.precioCompra || p.producto?.precioCompra || '0';
+
+        // Crear el objeto con todos los campos requeridos
+        const productoVenta: ProductoVentaPendiente = {
+          id: p.id || 0,
+          productoId: productoId,
+          nombre: nombre,
+          cantidad: cantidad,
+          precioVenta: typeof precioVenta === 'string' ? precioVenta : precioVenta.toString(),
+          total: typeof total === 'string' ? total : total.toString(),
+          descripcion: descripcion,
+          precioCompra: typeof precioCompra === 'string' ? precioCompra : precioCompra.toString(),
+          producto: p.producto || null
+        };
+
+        // Agregar campos opcionales si existen
+        if (p.createdAt) productoVenta.createdAt = p.createdAt;
+        if (p.updatedAt) productoVenta.updatedAt = p.updatedAt;
+        if (p.deletedAt !== undefined) productoVenta.deletedAt = p.deletedAt;
+        if (p.empresaId) productoVenta.empresaId = p.empresaId;
+
+        return productoVenta;
+      });
+
+      // Actualizar el total general
+      const nuevoTotal = productosVenta.reduce((sum, p) => {
+        const total = typeof p.total === 'string' ? p.total : String(p.total || '0');
+        return sum + (parseFloat(total) || 0);
+      }, 0);
+
+      const clienteName = selectedCliente
+        ? `${selectedCliente.nombre || ''} ${selectedCliente.apellido || ''}`.trim()
+        : 'Cliente no registrado';
+
+      const ventaData: CreateVentaPendiente = {
+        detalles: detallesVenta,
+        clienteId: selectedCliente?.id || null,
+        clienteName,
+        total: total.toFixed(2),
+        estado: 'pendiente',
+        fecha,
+        nombreVendedor,
+        usuarioId: authUser.id || 1,
+        empresaId,
+        pagado: '0.00',
+        cambio: '0.00',
+        cajaId: currentUser?.cajaId || 1,
+        codigo: codigoVenta, // Usar el código de venta existente si estamos editando
+        hora: formatTime(now),
+        // Asegurarse de que los productos tengan el formato correcto
+        productos: productosVenta.map(p => ({
+          id: p.id || 0,
+          productoId: p.productoId || 0,
+          nombre: p.nombre || '',
+          cantidad: p.cantidad || 0,
+          precioVenta: String(p.precioVenta || '0'),
+          total: String(p.total || '0'),
+          descripcion: p.descripcion || '',
+          precioCompra: p.precioCompra ? String(p.precioCompra) : '0',
+          ventaId: editingPendingSaleId,
+          ventaCodigo: ventaActual?.codigo || codigoVenta, // Asegurar que siempre tenga un código
+          venta_codigo: ventaActual?.codigo || codigoVenta, // Incluir también en snake_case
+          empresaId: p.empresaId || empresaId,
+          producto: p.producto || null
+        }))
+      };
+
+      if (editingPendingSaleId) {
+        // Obtener la venta pendiente actual para combinar los productos
+        const ventaActual = await getVentaPendienteById(editingPendingSaleId);
+
+        // Crear un mapa para rastrear los productos por nombre (para evitar duplicados)
+        const productosPorNombre = new Map<string, ProductoVentaPendiente>();
+
+        // Primero, procesar los productos existentes de la venta
+        if (ventaActual.detalles && Array.isArray(ventaActual.detalles)) {
+          ventaActual.detalles.forEach(detalle => {
+            if (detalle && detalle.descripcion) {
+              const nombreNormalizado = detalle.descripcion.trim().toLowerCase();
+              const productoExistente = productosPorNombre.get(nombreNormalizado);
+
+              if (productoExistente) {
+                // Si ya existe un producto con el mismo nombre, usar ese ID
+                detalle.productoId = productoExistente.id;
+              }
+
+              productosPorNombre.set(nombreNormalizado, {
+                id: detalle.productoId || 0, // Ensure id is always a number
+                productoId: detalle.productoId || 0, // Add the required productoId
+                nombre: detalle.descripcion,
+                cantidad: detalle.cantidad,
+                precioVenta: detalle.precioVenta,
+                total: detalle.total,
+                descripcion: detalle.descripcion,
+                precioCompra: detalle.precioCompra,
+                producto: detalle.producto || {
+                  id: detalle.productoId,
+                  nombre: detalle.descripcion,
+                  precioCompra: detalle.precioCompra || '0.00',
+                  precioVenta: detalle.precioVenta,
+                } as Producto
+              });
+            }
+          });
+        }
+
+        // Luego, actualizar o agregar los productos del carrito
+        productosVenta.forEach(nuevoProducto => {
+          const nombreProducto = (nuevoProducto.nombre || nuevoProducto.descripcion || '').trim().toLowerCase();
+          const productoExistente = productosPorNombre.get(nombreProducto);
+
+          if (productoExistente) {
+            // Si el producto ya existe, actualizamos la cantidad y el total
+            const cantidadTotal = productoExistente.cantidad + nuevoProducto.cantidad;
+            productosPorNombre.set(nombreProducto, {
+              ...productoExistente,
+              cantidad: cantidadTotal,
+              total: (cantidadTotal * parseFloat(String(productoExistente.precioVenta || '0'))).toFixed(2)
+            });
+          } else {
+            // Si es un producto nuevo, lo agregamos al mapa
+            const productoId = nuevoProducto.producto?.id || nuevoProducto.id;
+            productosPorNombre.set(nombreProducto, {
+              ...nuevoProducto,
+              id: productoId,
+              nombre: nuevoProducto.nombre || nuevoProducto.descripcion || ''
+            });
+          }
+        });
+
+        // Convertir el mapa a un array de productos combinados
+        const productosCombinados = Array.from(productosPorNombre.values());
+
+        // Crear los detalles para el backend
+        const detallesCombinados = productosCombinados.map(p => {
+          const productoId = p.producto?.id || p.id;
+          const producto = p.producto || {
+            id: p.id,
+            nombre: p.nombre,
+            precioCompra: p.precioCompra,
+            precioVenta: p.precioVenta
+          };
+
+          return {
+            cantidad: p.cantidad,
+            precioVenta: String(p.precioVenta || '0'),
+            precioCompra: String(producto.precioCompra || p.precioCompra || '0.00'),
+            total: (p.cantidad * parseFloat(String(p.precioVenta || '0'))).toFixed(2),
+            descripcion: p.descripcion || p.nombre || producto.nombre || '',
+            productoId: productoId,
+            empresaId: empresaId
+          };
+        });
+
+        // Calcular el nuevo total
+        const nuevoTotal = detallesCombinados.reduce((sum, d) => sum + parseFloat(d.total), 0).toFixed(2);
+
+        // Asegurarse de que los detalles tengan los tipos correctos
+        const detallesConTiposCorrectos = detallesCombinados.map(d => {
+          // Función auxiliar para convertir a string de forma segura
+          const safeToString = (value: any): string => {
+            if (value === null || value === undefined) return '0';
+            if (typeof value === 'string') return value;
+            if (typeof value === 'number') return value.toString();
+            if (typeof value === 'boolean') return value ? '1' : '0';
+            return String(value);
+          };
+
+          return {
+            ...d,
+            precioVenta: safeToString(d.precioVenta),
+            precioCompra: safeToString(d.precioCompra),
+            total: safeToString(d.total),
+            cantidad: d.cantidad,
+            descripcion: d.descripcion || '',
+            productoId: d.productoId,
+            empresaId: d.empresaId || 1
+          };
+        });
+
+        // Crear el objeto de actualización con los datos combinados
+        const updateData = {
+          ...ventaData,
+          estado: 'pendiente',
+          detalles: detallesConTiposCorrectos,
+          id: editingPendingSaleId,
+          total: nuevoTotal,
+          // Asegurarse de que los productos estén en el formato correcto
+          productos: productosCombinados.map(p => ({
+            id: p.id,
+            productoId: p.productoId || p.producto?.id || 0,
+            nombre: p.nombre || p.producto?.nombre || '',
+            cantidad: p.cantidad,
+            precioVenta: typeof p.precioVenta === 'string' ? p.precioVenta : p.precioVenta.toString(),
+            precioCompra: (p.precioCompra || p.producto?.precioCompra || '0.00').toString(),
+            total: (p.cantidad * (typeof p.precioVenta === 'string' ? parseFloat(p.precioVenta) : Number(p.precioVenta))).toFixed(2),
+            descripcion: p.descripcion || p.producto?.nombre || '',
+            producto: p.producto || null,
+            empresaId: p.empresaId || 1 // Default to 1 if not provided
+          }))
+        };
+
+        console.log('Datos de actualización de venta pendiente:', updateData);
+        const ventaActualizada = await updateVentaPendiente(editingPendingSaleId, updateData);
+
+        toast({
+          title: "Venta pendiente actualizada",
+          description: `La venta pendiente se ha actualizado correctamente.`,
+        });
+      } else {
+        // Crear nueva venta pendiente
+        const nuevaVenta = await createVentaPendiente(ventaData);
+
+        toast({
+          title: "Venta guardada como pendiente",
+          description: `La venta se ha guardado correctamente como pendiente.`,
+        });
+      }
 
       // Limpiar el formulario
       setProductosSeleccionados([]);
       setSelectedCliente(null);
       setSelectedName("");
       setPago(0);
+      setEditingPendingSaleId(null);
 
       // Recargar la lista de ventas pendientes
       await loadVentasPendientes();
-
-      toast({
-        title: "Venta guardada como pendiente",
-        description: `La venta ${venta.codigo} se ha guardado como pendiente.`,
-      });
 
       // Redirigir a la página de ventas pendientes
       navigate("/ventas-pendientes");
@@ -758,7 +1214,7 @@ export const VentaForm = () => {
       console.error("Error al guardar venta pendiente:", error);
       toast({
         title: "Error",
-        description: "No se pudo guardar la venta como pendiente",
+        description: `No se pudo ${editingPendingSaleId ? 'actualizar' : 'guardar'} la venta como pendiente`,
         variant: "destructive",
       });
     } finally {
@@ -773,26 +1229,26 @@ export const VentaForm = () => {
       for (const item of productosSeleccionados) {
         const productoActual = await getProductoById(item.producto.id);
         if (!productoActual) {
-          return { 
-            valido: false, 
-            mensaje: `No se pudo verificar el stock para ${item.producto.nombre}` 
+          return {
+            valido: false,
+            mensaje: `No se pudo verificar el stock para ${item.producto.nombre}`
           };
         }
 
         const stockDisponible = Number(productoActual.stockTotal) || 0;
         if (stockDisponible < item.cantidad) {
-          return { 
-            valido: false, 
-            mensaje: `Stock insuficiente para ${item.producto.nombre}. Stock disponible: ${stockDisponible}` 
+          return {
+            valido: false,
+            mensaje: `Stock insuficiente para ${item.producto.nombre}. Stock disponible: ${stockDisponible}`
           };
         }
       }
       return { valido: true, mensaje: '' };
     } catch (error) {
       console.error('Error al verificar stock:', error);
-      return { 
-        valido: false, 
-        mensaje: 'Error al verificar el stock de los productos' 
+      return {
+        valido: false,
+        mensaje: 'Error al verificar el stock de los productos'
       };
     }
   };
@@ -816,10 +1272,10 @@ export const VentaForm = () => {
       });
       return;
     }
-    
+
     // Si no hay cliente seleccionado, usar null
     const clienteId = selectedCliente?.id || null;
-    
+
     // Verificar productos seleccionados
     if (productosSeleccionados.length === 0) {
       toast({
@@ -854,10 +1310,10 @@ export const VentaForm = () => {
     setLoading(true);
     try {
       let venta;
-      
+
       if (editingPendingSaleId) {
-        // Si es una venta pendiente, usar la función completarVentaPendiente
-        // que maneja correctamente la actualización del stock
+        // Si es una venta pendiente, usar la función actualizarYFinalizarVenta
+        // que maneja correctamente la actualización y finalización en una sola operación
         if (!selectedCajaId) {
           toast({
             title: "Error",
@@ -867,21 +1323,44 @@ export const VentaForm = () => {
           setLoading(false);
           return;
         }
-        
-        venta = await completarVentaPendiente(editingPendingSaleId, {
-          pagado: pago.toFixed(2),
-          cambio: cambio.toFixed(2),
-          cajaId: selectedCajaId,
-          usuarioId: currentUser.id,
-          empresaId: empresaId || 1
-        });
+
+        // Preparar los datos de la venta actualizada
+        const ventaData = {
+          clienteId: selectedCliente?.id || null,
+          clienteName: selectedCliente
+            ? `${selectedCliente.nombre || ''} ${selectedCliente.apellido || ''}`.trim()
+            : 'Cliente no registrado',
+          total: total.toString(),
+          detalles: productosSeleccionados.map(p => ({
+            productoId: p.producto.id,
+            cantidad: p.cantidad,
+            precioVenta: p.precio,
+            precioCompra: p.producto.precioCompra || '0',
+            total: (parseFloat(p.precio) * p.cantidad).toString(),
+            descripcion: p.producto.nombre || '',
+            empresaId: empresaId
+          })),
+        };
+
+        // Usar la nueva función que actualiza y finaliza la venta
+        venta = await actualizarYFinalizarVenta(
+          editingPendingSaleId,
+          ventaData,
+          {
+            pagado: pago.toFixed(2),
+            cambio: cambio.toFixed(2),
+            cajaId: selectedCajaId,
+            usuarioId: currentUser.id,
+            empresaId: empresaId || 1
+          }
+        );
       } else {
         // Si es una venta nueva, crearla normalmente
         const ventaData = {
           codigo: `V-${Date.now()}`,
           clienteId: clienteId, // Puede ser null si no hay cliente
-          clienteName: selectedCliente 
-            ? `${selectedCliente.nombre || ''} ${selectedCliente.apellido || ''}`.trim() 
+          clienteName: selectedCliente
+            ? `${selectedCliente.nombre || ''} ${selectedCliente.apellido || ''}`.trim()
             : 'Cliente no registrado',
           usuarioId: currentUser.id,
           empresaId,
@@ -1030,7 +1509,9 @@ export const VentaForm = () => {
                                 {venta.clienteName || "Sin cliente"}
                               </p>
                               <p className="text-sm text-muted-foreground">
-                                {new Date(venta.fecha).toLocaleDateString()}
+                                {venta.createdAt 
+                                  ? new Date(venta.createdAt).toLocaleDateString('es-GT')
+                                  : venta.fecha || 'Fecha no disponible'}
                               </p>
                             </div>
                             <span className="font-bold">
@@ -1116,9 +1597,9 @@ export const VentaForm = () => {
                       {selectedCategorias.length === 0
                         ? "Todas las categorías"
                         : selectedCategorias.length === 1
-                        ? categorias.find((c) => c.id === selectedCategorias[0])
+                          ? categorias.find((c) => c.id === selectedCategorias[0])
                             ?.nombre
-                        : `${selectedCategorias.length} categorías`}
+                          : `${selectedCategorias.length} categorías`}
                     </span>
                   </div>
                   <ChevronDown className="h-4 w-4 opacity-50" />
@@ -1258,9 +1739,8 @@ export const VentaForm = () => {
                   <SelectItem value="no_cliente">Sin cliente</SelectItem>
                   {clientes.map((cliente) => (
                     <SelectItem key={cliente.id} value={cliente.id.toString()}>
-                      {`${cliente.nombre || ""} ${
-                        cliente.apellido || ""
-                      }`.trim() || "Cliente sin nombre"}
+                      {`${cliente.nombre || ""} ${cliente.apellido || ""
+                        }`.trim() || "Cliente sin nombre"}
                     </SelectItem>
                   ))}
                 </SelectContent>

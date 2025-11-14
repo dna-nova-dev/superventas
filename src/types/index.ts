@@ -4,41 +4,92 @@ import { Caja } from "./caja.interface";
 
 export type EstadoVenta = 'pendiente' | 'completada' | 'cancelada' | 'devuelta';
 
-export interface ProductoVentaPendiente {
+// Base entity fields that are common across most models
+interface BaseEntity {
   id: number;
+  empresaId: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+// Product Interface
+export interface Producto extends BaseEntity {
+  codigo: string;
   nombre: string;
+  descripcion?: string;
+  stockTotal: number;
+  tipoUnidad: string;
+  precioCompra: string;
+  precioVenta: string;
+  marca: string;
+  modelo: string;
+  estado: string;
+  foto: string;
+  categoriaId: number | null;
+}
+
+
+export interface DetalleVenta {
+  id?: number;
   cantidad: number;
   precioVenta: string;
+  precioCompra: string;
   total: string;
-  descripcion?: string;
+  descripcion: string;
+  productoId: number;
+  empresaId: number;
+  ventaId?: number;
+  venta_codigo?: string; // Código de la venta a la que pertenece el detalle
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  producto?: Producto;
 }
 
 export interface VentaPendiente {
   usuarioId: number;
   empresaId: number;
   id: number;
-  productos: ProductoVentaPendiente[]; // JSON string with products information
-  clienteId: number; // Foreign key to Cliente
+  productos: ProductoVentaPendiente[]; // For backward compatibility
+  detalles?: DetalleVenta[]; // New field for detailed items
+  clienteId: number | null; // Foreign key to Cliente (can be null)
   clienteName: string; // Client's name
   total: string; // Total amount as decimal string (e.g., "1000.00")
   nombreVendedor: string; // Salesperson's name
   estado: string; // Status (e.g., "pendiente", "vendido")
   fecha: string; // Date string (YYYY-MM-DD)
+  hora?: string; // Time string (HH:MM:SS)
+  pagado?: string; // Amount paid
+  cambio?: string; // Change amount
+  cajaId?: number; // Cash register ID
+  codigo?: string; // Sale code
   createdAt: string; // Creation timestamp (ISO string)
   updatedAt: string; // Last update timestamp (ISO string)
-  // Optional fields that might be populated by the frontend
-  cliente?: Cliente;
-  productosData?: ProductoVentaPendiente[]; // Parsed productos JSON
+  deletedAt?: string | null; // Soft delete timestamp
+  // Optional fields that might be populated by the frontend or backend
+  cliente?: Cliente | null;
+  usuario?: Usuario; // User who created the sale
+  caja?: Caja; // Cash register info
+  productosData?: ProductoVentaPendiente[]; // Parsed productos JSON (legacy)
 }
 
 export interface CreateVentaPendiente {
-  productos: ProductoVentaPendiente[]; // JSON string with products information
-  clienteId: number; // Client ID (required)
+  productos?: ProductoVentaPendiente[]; // For backward compatibility
+  detalles?: DetalleVenta[]; // New field for detailed items
+  clienteId: number | null; // Client ID (can be null for unregistered clients)
   clienteName: string; // Client name (required)
   total: string; // Total amount as decimal string (e.g., "1000.00") (required)
   nombreVendedor: string; // Salesperson name (required)
   estado: string; // Status (e.g., "pendiente") (required)
   fecha: string; // Date in format "YYYY-MM-DD" (required)
+  usuarioId: number; // User ID who created the pending sale
+  empresaId: number; // Company ID
+  pagado: string; // Amount paid (required by backend) - Note: Backend expects 'pagado' not 'venta_pagado'
+  cambio: string; // Change amount (required by backend)
+  cajaId: number; // Cash register ID (required by backend)
+  codigo?: string; // Optional sale code
+  hora?: string; // Optional time
 }
 
 export interface Categoria {
@@ -112,6 +163,7 @@ export interface Producto {
   deletedAt: string | null;
   codigo: string;
   nombre: string;
+  descripcion?: string;  // Added missing descripcion property
   stockTotal: number;
   tipoUnidad: string;
   precioCompra: string;
@@ -190,20 +242,40 @@ export interface CreateVenta extends Record<string, unknown> {
   estado?: string; // Agregado para soportar ventas pendientes
 }
 
+// Sale Detail Interface
 export interface VentaDetalle {
-  id: number;
-  empresaId: number;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-  cantidad: number;
-  precioCompra: string;
-  precioVenta: string;
-  total: string;
-  descripcion: string;
-  ventaCodigo: string;
+  id?: number;
   productoId: number;
+  nombre?: string;
+  cantidad: number;
+  precioVenta: string | number;
+  precioCompra?: string | number; // Made optional
+  total: string | number;
+  descripcion: string;
+  // Backend fields
+  empresaId?: number;  // Made optional for frontend use
+  ventaCodigo?: string;  // Made optional for frontend use
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  // Frontend only
+  producto?: Producto | null;
 }
+
+// Alias for frontend usage
+export type ProductoVentaPendiente = Omit<VentaDetalle, 'ventaCodigo' | 'createdAt' | 'updatedAt' | 'deletedAt'> & {
+  producto?: Producto | null;
+  nombre?: string;
+  precioVenta?: string | number;
+  total?: string | number;
+  // Make these fields optional for frontend convenience
+  empresaId?: number;
+  ventaCodigo?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+};
+
 export interface CreateVentaDetalle {
   cantidad: number;
   precioCompra: string;

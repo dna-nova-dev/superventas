@@ -176,11 +176,39 @@ export default function VentasPendientes() {
     },
     {
       header: "Fecha",
-      accessor: "fecha" as const,
+      accessor: (venta: Venta) => {
+        // Usar createdAt si está disponible, de lo contrario usar fecha
+        const fecha = venta.createdAt || venta.fecha;
+        if (!fecha) return "Sin fecha";
+        
+        // Crear objeto Date
+        const fechaObj = new Date(fecha);
+        
+        // Verificar si la fecha es válida
+        if (isNaN(fechaObj.getTime())) return "Fecha inválida";
+        
+        // Formatear la fecha según la configuración regional
+        return fechaObj.toLocaleDateString('es-GT', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+      },
     },
     {
       header: "Hora",
-      accessor: "hora" as const,
+      accessor: (venta: Venta) => {
+        // Usar createdAt si está disponible, de lo contrario usar hora
+        const hora = venta.createdAt 
+          ? new Date(venta.createdAt).toLocaleTimeString('es-GT', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              hour12: true 
+            })
+          : venta.hora;
+        
+        return hora || "Sin hora";
+      },
     },
     {
       header: "Cliente",
@@ -377,7 +405,34 @@ export default function VentasPendientes() {
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Fecha y Hora:</p>
                   <p className="text-sm text-gray-700 dark:text-gray-300">
-                    {ventaToView.fecha} {ventaToView.hora}
+                    {(() => {
+                      // Usar createdAt si está disponible, de lo contrario usar fecha y hora por separado
+                      const fechaHora = ventaToView.createdAt 
+                        ? new Date(ventaToView.createdAt)
+                        : ventaToView.fecha 
+                          ? new Date(`${ventaToView.fecha}T${ventaToView.hora || '00:00:00'}`)
+                          : null;
+                      
+                      if (!fechaHora || isNaN(fechaHora.getTime())) {
+                        return 'Fecha no disponible';
+                      }
+                      
+                      // Formatear fecha
+                      const fechaFormateada = fechaHora.toLocaleDateString('es-GT', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit'
+                      });
+                      
+                      // Formatear hora
+                      const horaFormateada = fechaHora.toLocaleTimeString('es-GT', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true
+                      });
+                      
+                      return `${fechaFormateada} ${horaFormateada}`;
+                    })()}
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -431,11 +486,11 @@ export default function VentasPendientes() {
                           {detalle.descripcion || `Producto #${detalle.productoId || 'N/A'}`}
                         </p>
                         <p className="text-sm text-gray-500">
-                          {detalle.cantidad} x {formatCurrency(parseFloat(detalle.precioVenta))}
+                          {detalle.cantidad} x {formatCurrency(Number(detalle.precioVenta) || 0)}
                         </p>
                       </div>
                       <p className="font-medium">
-                        {formatCurrency(parseFloat(detalle.total))}
+                        {formatCurrency(Number(detalle.total) || 0)}
                       </p>
                     </div>
                   ))}
