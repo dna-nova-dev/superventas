@@ -141,7 +141,23 @@ export const CompraForm = () => {
           mod.getAllCajas(empresaId)
         );
         setCajas(cajasData);
+        
+        // Establecer la caja por defecto del usuario si está disponible
+        if (currentUser?.cajaId) {
+          // Verificar si la caja del usuario existe en la lista de cajas
+          const cajaUsuario = cajasData.find(caja => caja.id === currentUser.cajaId);
+          if (cajaUsuario) {
+            setSelectedCajaId(currentUser.cajaId);
+          } else if (cajasData.length > 0) {
+            // Si la caja del usuario no existe, seleccionar la primera caja disponible
+            setSelectedCajaId(cajasData[0].id);
+          }
+        } else if (cajasData.length > 0) {
+          // Si no hay caja por defecto, seleccionar la primera caja disponible
+          setSelectedCajaId(cajasData[0].id);
+        }
       } catch (error) {
+        console.error("Error al cargar las cajas:", error);
         toast({
           title: "Error",
           description: "No se pudieron cargar las cajas",
