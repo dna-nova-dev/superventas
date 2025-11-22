@@ -4,9 +4,13 @@ import { Compra, CreateCompra } from "@/types";
 const apiService = new ApiService();
 const VENTA_ENDPOINT = "compras";
 
-export const getCompras = async (): Promise<Compra[]> => {
+export const getCompras = async (empresaId?: number): Promise<Compra[]> => {
   try {
-    const response = await apiService.get<Compra[]>(`${VENTA_ENDPOINT}/all`);
+    const url = empresaId 
+      ? `${VENTA_ENDPOINT}/all?empresaId=${empresaId}`
+      : `${VENTA_ENDPOINT}/all`;
+    
+    const response = await apiService.get<Compra[]>(url);
     return response;
   } catch (error: unknown) {
     console.error("Error fetching compras:", error);

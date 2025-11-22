@@ -4,9 +4,13 @@ import { VentaDetalle,CreateVentaDetalle } from '@/types';
 const apiService = new ApiService();
 const VENTA_DETALLE_ENDPOINT = 'venta-detalles';
 
-export const getVentaDetalles = async (): Promise<VentaDetalle[]> => {
+export const getVentaDetalles = async (empresaId?: number): Promise<VentaDetalle[]> => {
   try {
-    const response = await apiService.get<VentaDetalle[]>(`${VENTA_DETALLE_ENDPOINT}/all`);
+    const url = empresaId 
+      ? `${VENTA_DETALLE_ENDPOINT}/all?empresaId=${empresaId}`
+      : `${VENTA_DETALLE_ENDPOINT}/all`;
+      
+    const response = await apiService.get<VentaDetalle[]>(url);
     return response;
   } catch (error: unknown) {
     console.error("Error fetching venta detalles:", error);
@@ -29,7 +33,7 @@ export const getVentaDetalleById = async (id: number): Promise<VentaDetalle> => 
   }
 };
 
-export const createVentaDetalle = async (ventaDetalle: Omit<CreateVentaDetalle, 'venta_detalle_id'> & Record<string, unknown>): Promise<CreateVentaDetalle> => {
+export const createVentaDetalle = async (ventaDetalle: Omit<CreateVentaDetalle, 'venta_detalle_id'> & Record<string, unknown>): Promise<VentaDetalle> => {
   try {
     return await apiService.post<VentaDetalle>(`${VENTA_DETALLE_ENDPOINT}/create`, ventaDetalle);
   } catch (error: unknown) {

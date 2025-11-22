@@ -161,16 +161,22 @@ const Usuarios = () => {
         // Load companies if user is Owner
         if (userRole === 'Owner') {
           const empresasData = await getAllEmpresas();
-          setEmpresas(empresasData);
+          // Only show companies that the current user owns
+          const userEmpresas = empresasData.filter(empresa => empresa.owner === user?.id);
+          setEmpresas(userEmpresas);
         }
         
         // Load and filter cash registers
         const allCajas = await getAllCajas();
         
-        // Filter cash registers based on role
+        // Filter cash registers based on role and company ownership
         if (userRole === 'Owner') {
-          // Owner sees all non-deleted cash registers
-          const activeCajas = allCajas.filter(c => c.deletedAt === null);
+          // Owner sees only non-deleted cash registers from their companies
+          const userEmpresaIds = empresas.map(e => e.id);
+          const activeCajas = allCajas.filter(c => {
+            const cajaEmpresaId = typeof c.empresaId === 'object' ? c.empresaId : c.empresaId;
+            return userEmpresaIds.includes(cajaEmpresaId) && c.deletedAt === null;
+          });
           setCajas(activeCajas);
         } else if (currentEmpresaId) {
           // Other roles see only their company's cash registers
@@ -1058,20 +1064,10 @@ const Usuarios = () => {
                   <div className="space-y-2">
                     <Label>Empresa</Label>
                     <Select
-                      value={newUser.empresaId ? String(newUser.empresaId) : String(empresaId)}
-                      onValueChange={(value) => {
-                        const selectedEmpresaId = parseInt(value) || 0;
-                        // Filtrar cajas según la empresa seleccionada
-                        const filteredCajas = cajas.filter(caja => caja.empresaId === selectedEmpresaId);
-                        setCajas(filteredCajas);
-                        // Actualizar el estado del nuevo usuario
-                        setNewUser({ 
-                          ...newUser, 
-                          empresaId: selectedEmpresaId,
-                          caja_id: 0 // Resetear la caja seleccionada al cambiar de empresa
-                        });
-                      }}
-                      disabled={userRole === 'Administrador'} // Deshabilitar para administradores
+                      value={newUser.empresaId ? String(newUser.empresaId) : ''}
+                      onValueChange={(value) =>
+                        setNewUser({ ...newUser, empresaId: parseInt(value) || 0 })
+                      }
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Seleccione una empresa" />
@@ -1084,7 +1080,6 @@ const Usuarios = () => {
                             </SelectItem>
                           ))
                         ) : (
-                          // Mostrar solo la empresa del administrador
                           empresas
                             .filter(emp => emp.id === empresaId)
                             .map(empresa => (

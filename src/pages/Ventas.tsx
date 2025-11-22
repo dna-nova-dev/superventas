@@ -141,8 +141,8 @@ const Ventas = () => {
       setLoading(true);
       console.log('Cargando ventas...');
       
-      // Cargar solo las ventas completadas
-      const allVentas = await getVentas('completada');
+      // Cargar solo las ventas completadas de la empresa actual
+      const allVentas = await getVentas(empresaId, 'completada');
       console.log('Ventas completadas cargadas:', allVentas);
       
       if (!empresaId) {
@@ -430,7 +430,9 @@ const Ventas = () => {
       doc.setFont("helvetica", "normal");
       ldetails.forEach((detalle) => {
         const cantidad = detalle.cantidad;
-        const precioVenta = Number.parseFloat(detalle.precioVenta);
+        const precioVenta = typeof detalle.precioVenta === 'string' 
+          ? Number.parseFloat(detalle.precioVenta) 
+          : detalle.precioVenta;
         const subtotal = cantidad * precioVenta;
 
         // Product name

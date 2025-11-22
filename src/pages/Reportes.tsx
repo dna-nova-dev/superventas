@@ -238,8 +238,10 @@ const Reportes = () => {
   }, [empresaId, toast, selectedCaja]);
 
   const loadInitialData = useCallback(async () => {
+    if (!empresaId) return;
+    
     try {
-      console.log('Iniciando carga de datos...');
+      console.log('Iniciando carga de datos para empresaId:', empresaId);
       setLoading(true);
       const [
         ventasData,
@@ -248,11 +250,11 @@ const Reportes = () => {
         categoriasData,
         clientesData,
       ] = await Promise.all([
-        getVentas(),
-        getAllProductos(),
-        getVentaDetalles(),
-        getAllCategorias(),
-        getAllClientes(),
+        getVentas(empresaId),
+        getAllProductos(empresaId),
+        getVentaDetalles(empresaId),
+        getAllCategorias(empresaId),
+        getAllClientes(empresaId),
       ]);
 
       console.log('Datos cargados:', {
@@ -369,7 +371,7 @@ const Reportes = () => {
       const category = filteredCategorias.find(c => c.id === product.categoriaId);
       if (!category) return acc;
       
-      const total = parseFloat(detalle.total || '0');
+      const total = typeof detalle.total === 'string' ? parseFloat(detalle.total) || 0 : Number(detalle.total) || 0;
       
       if (!acc[category.id]) {
         acc[category.id] = {
@@ -419,7 +421,10 @@ const Reportes = () => {
       const catProducts = productos.filter(p => p.categoriaId === cat.id);
       const catSales = filteredVentaDetallesByPeriod
         .filter(d => catProducts.some(p => p.id === d.productoId))
-        .reduce((sum, d) => sum + parseFloat(d.total), 0);
+        .reduce((sum, d) => {
+          const total = typeof d.total === 'string' ? parseFloat(d.total) : Number(d.total);
+          return sum + (isNaN(total) ? 0 : total);
+        }, 0);
       
       console.log(`Category ${index + 1}:`, {
         id: cat.id,

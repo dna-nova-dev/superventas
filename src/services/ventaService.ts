@@ -4,9 +4,12 @@ import { Venta, CreateVenta, EstadoVenta } from '@/types';
 const apiService = new ApiService();
 const VENTA_ENDPOINT = 'ventas';
 
-export const getVentas = async (estado?: EstadoVenta): Promise<Venta[]> => {
+export const getVentas = async (empresaId?: number, estado?: EstadoVenta): Promise<Venta[]> => {
   try {
     const params = new URLSearchParams();
+    if (empresaId) {
+      params.append('empresaId', empresaId.toString());
+    }
     if (estado) {
       params.append('estado', estado);
     }

@@ -56,8 +56,8 @@ export default function VentasPendientes() {
       setLoading(true);
       console.log('Solicitando ventas pendientes...');
       
-      // Usar getVentas con el estado "pendiente"
-      const data = await getVentas("pendiente");
+      // Usar getVentas con empresaId y estado "pendiente"
+      const data = await getVentas(empresaId, "pendiente");
       console.log('Ventas pendientes recibidas:', data);
       
       setVentasPendientes(data);

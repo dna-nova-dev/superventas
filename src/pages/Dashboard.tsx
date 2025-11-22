@@ -1278,14 +1278,16 @@ const Dashboard = () => {
     cajas,
     selectedEstadisticasCajaId,
     filteredVentas,
-    filteredProductos,
-    filteredClientes,
-    gastos
   ]);
 
   useEffect(() => {
+    if (!empresaId) return;
+
     const today = new Date();
+    
     const filteredVentas = ventas.filter((venta) => {
+      if (venta.empresaId !== empresaId) return false;
+      
       const ventaDate = new Date(venta.fecha);
       const diffDays = Math.floor(
         (today.getTime() - ventaDate.getTime()) / (1000 * 60 * 60 * 24)
@@ -1326,83 +1328,139 @@ const Dashboard = () => {
     }
 
     dispatch({ type: "SET_FIELD", field: "salesData", value: chartData });
-  }, [ventas, salesPeriod]);
+  }, [ventas, salesPeriod, empresaId, categorias, productos, categoryPeriod, dispatch]);
 
   useEffect(() => {
+    if (!empresaId) return;
+
     const today = new Date();
+    
     const filteredVentas = ventas.filter((venta) => {
+      if (venta.empresaId !== empresaId) return false;
+      
       const ventaDate = new Date(venta.fecha);
-      const diffMonths =
-        today.getMonth() -
-        ventaDate.getMonth() +
-        12 * (today.getFullYear() - ventaDate.getFullYear());
-      return (
-        diffMonths <=
-        (categoryPeriod === "month" ? 1 : categoryPeriod === "quarter" ? 3 : 12)
+      const diffDays = Math.floor(
+        (today.getTime() - ventaDate.getTime()) / (1000 * 60 * 60 * 24)
       );
+      
+      return diffDays <= (salesPeriod === "30days" ? 30 : salesPeriod === "60days" ? 60 : 90);
     });
 
-    const categoryTotals = categorias.map((categoria) => {
-      const categoryProducts = productos.filter(
-        (p) => p.categoriaId === categoria.id
-      );
+    const groupedSales = filteredVentas.reduce((acc, venta) => {
+      const fechaVenta = new Date(venta.fecha);
+      const diaVenta = fechaVenta.getDate();
+      const mesVenta = fechaVenta.getMonth() + 1;
+      const anioVenta = fechaVenta.getFullYear();
+      const fechaFormateada = `${diaVenta}/${mesVenta}/${anioVenta}`;
+      
+      acc[fechaFormateada] = (acc[fechaFormateada] || 0) + parseFloat(venta.total);
+      return acc;
+    }, {} as Record<string, number>);
+
+    const chartData = Object.entries(groupedSales).map(([name, ventas]) => ({
+      name,
+      ventas,
+    }));
+
+    // Sort data based on period
+    if (salesPeriod === "30days") {
+      chartData.sort((a, b) => parseInt(a.name) - parseInt(b.name));
+    }
+
+    dispatch({ type: "SET_FIELD", field: "salesData", value: chartData });
+  }, [ventas, salesPeriod, empresaId, dispatch]);
+
+  // Categorías y productos filtrados por empresa
+  const filteredCategorias = useMemo(() => 
+    categorias.filter(cat => cat.empresaId === empresaId)
+  , [categorias, empresaId]);
+
+  
+
+  // Efecto para calcular datos de categorías
+  useEffect(() => {
+    if (!empresaId) return;
+
+    const today = new Date();
+    
+    const filteredVentas = ventas.filter((venta) => {
+      if (venta.empresaId !== empresaId) return false;
+      
+      const ventaDate = new Date(venta.fecha);
+      const diffMonths = today.getMonth() - ventaDate.getMonth() + 
+                        12 * (today.getFullYear() - ventaDate.getFullYear());
+      
+      return diffMonths <= (categoryPeriod === "month" ? 1 : categoryPeriod === "quarter" ? 3 : 12);
+    });
+
+    const categoryTotals = filteredCategorias.map((categoria) => {
       const total = filteredVentas.reduce((acc, venta) => {
-        return acc + parseFloat(venta.total) / categorias.length;
+        if (venta.ventaDetalles?.length > 0) {
+          return acc + venta.ventaDetalles.reduce((detailAcc, detalle) => {
+            const product = filteredProductos.find(p => p.id === detalle.productoId);
+            if (product && product.categoriaId === categoria.id) {
+              return detailAcc + (parseFloat(detalle.total) || 0);
+            }
+            return detailAcc;
+          }, 0);
+        }
+        
+        return acc + (parseFloat(venta.total) || 0) / Math.max(1, filteredCategorias.length);
       }, 0);
 
       return {
         name: categoria.nombre,
-        value: total,
+        value: parseFloat(total.toFixed(2)),
       };
-    });
+    }).filter(cat => cat.value > 0);
 
     dispatch({
       type: "SET_FIELD",
       field: "categoryData",
       value: categoryTotals,
     });
-  }, [ventas, categoryPeriod, categorias, productos]);
+  }, [categorias, productos, ventas, categoryPeriod, empresaId, dispatch, filteredCategorias, filteredProductos]);
 
+  // Efecto para calcular datos de ventas
   useEffect(() => {
-    const months = trendPeriod === "6months" ? 6 : 12;
-    const data = [];
+    if (!empresaId) return;
+
     const today = new Date();
-
-    for (let i = months - 1; i >= 0; i--) {
-      const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
-      const monthName = date.toLocaleDateString("es-GT", { month: "short" });
-
-      const monthVentas = ventas.filter((venta) => {
-        const ventaDate = new Date(venta.fecha);
-        return (
-          ventaDate.getMonth() === date.getMonth() &&
-          ventaDate.getFullYear() === date.getFullYear()
-        );
-      });
-
-      const total = monthVentas.reduce(
-        (acc, venta) => acc + parseFloat(venta.total),
-        0
+    
+    const filteredVentas = ventas.filter((venta) => {
+      if (venta.empresaId !== empresaId) return false;
+      
+      const ventaDate = new Date(venta.fecha);
+      const diffDays = Math.floor(
+        (today.getTime() - ventaDate.getTime()) / (1000 * 60 * 60 * 24)
       );
+      
+      return diffDays <= (salesPeriod === "30days" ? 30 : salesPeriod === "60days" ? 60 : 90);
+    });
 
-      data.push({
-        name: monthName,
-        ventas: total,
-      });
+    const groupedSales = filteredVentas.reduce((acc, venta) => {
+      const fechaVenta = new Date(venta.fecha);
+      const diaVenta = fechaVenta.getDate();
+      const mesVenta = fechaVenta.getMonth() + 1;
+      const anioVenta = fechaVenta.getFullYear();
+      const fechaFormateada = `${diaVenta}/${mesVenta}/${anioVenta}`;
+      
+      acc[fechaFormateada] = (acc[fechaFormateada] || 0) + parseFloat(venta.total);
+      return acc;
+    }, {} as Record<string, number>);
+
+    const chartData = Object.entries(groupedSales).map(([name, ventas]) => ({
+      name,
+      ventas,
+    }));
+
+    // Sort data based on period
+    if (salesPeriod === "30days") {
+      chartData.sort((a, b) => parseInt(a.name) - parseInt(b.name));
     }
 
-    dispatch({ type: "SET_FIELD", field: "trendData", value: data });
-  }, [ventas, trendPeriod]);
-
-  if (loading) {
-    return (
-      <Layout>
-        <div className="flex items-center justify-center h-full">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
-        </div>
-      </Layout>
-    );
-  }
+    dispatch({ type: "SET_FIELD", field: "salesData", value: chartData });
+  }, [ventas, salesPeriod, empresaId, dispatch]);
 
   const stats = filteredStats;
   const recentSales = [...ventas]

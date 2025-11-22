@@ -171,7 +171,7 @@ const Compras = () => {
 
   const loadCompras = useCallback(async () => {
     try {
-      const data = await getCompras();
+      const data = await getCompras(empresaId || undefined);
       setCompras(data);
     } catch (error) {
       toast({
@@ -180,7 +180,7 @@ const Compras = () => {
         variant: "destructive",
       });
     }
-  }, [toast]);
+  }, [toast, empresaId]);
 
   const loadData = useCallback(async () => {
     await Promise.all([
@@ -192,9 +192,13 @@ const Compras = () => {
 
   // Load purchase details
   const loadDetalles = useCallback(async () => {
+    if (!empresaId) return;
+    
     try {
       const allDetalles = await Promise.all(
-        compras.map(compra => getCompraDetalleByCodigo(compra.codigo))
+        compras
+          .filter(compra => compra.empresaId === empresaId) // Only load details for the current company
+          .map(compra => getCompraDetalleByCodigo(compra.codigo))
       );
       setDetalles(allDetalles.flat());
     } catch (error) {

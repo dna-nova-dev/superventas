@@ -45,62 +45,97 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // Efecto para cargar la empresa cuando cambia el usuario o el ID de empresa
   useEffect(() => {
-    console.log('useEffect - usuario o empresaId cambiaron:', { 
-      userId: user?.id, 
-      empresaId,
-      currentEmpresa: currentEmpresa?.id 
-    });
+    let isMounted = true;
+    
+    const logState = () => {
+      if (!isMounted) return;
+      console.log('useEffect - usuario o empresaId cambiaron:', { 
+        userId: user?.id, 
+        empresaId,
+        currentEmpresaId: currentEmpresa?.id 
+      });
+    };
+    
+    logState();
 
     // Si no hay usuario o no hay empresaId, limpiamos
     if (!user || !empresaId) {
       console.log('No hay usuario o empresaId, limpiando...');
-      if (currentEmpresa) setCurrentEmpresa(null);
-      return;
+      if (currentEmpresa) {
+        setCurrentEmpresa(null);
+      }
+      return () => {
+        isMounted = false;
+      };
     }
 
     // Si ya tenemos la empresa correcta, no hacemos nada
     if (currentEmpresa?.id === empresaId) {
       console.log('La empresa actual ya está cargada:', currentEmpresa);
-      return;
+      return () => {
+        isMounted = false;
+      };
     }
 
     // Función para cargar la empresa
     const cargarEmpresa = async () => {
       console.log('Intentando cargar empresa con ID:', empresaId);
       
+      if (!empresaId) {
+        console.log('No hay empresaId, no se puede cargar la empresa');
+        setCurrentEmpresa(null);
+        return;
+      }
+
       try {
-        // Primero intentamos cargar la empresa desde el localStorage
+        // 1. Try loading from localStorage first
         const savedEmpresa = localStorage.getItem(`empresa_${empresaId}`);
         if (savedEmpresa) {
           try {
             const parsedEmpresa = JSON.parse(savedEmpresa) as Empresa;
             if (parsedEmpresa && parsedEmpresa.id === empresaId) {
               console.log('Empresa cargada desde localStorage:', parsedEmpresa);
-              setCurrentEmpresa(parsedEmpresa);
+              console.log('Estableciendo currentEmpresa desde localStorage...');
+              
+              // Usar setTimeout para asegurar que la actualización del estado se complete
+              setTimeout(() => {
+                setCurrentEmpresa(prevEmpresa => {
+                  console.log('Estado anterior de currentEmpresa:', prevEmpresa);
+                  console.log('Nuevo estado de currentEmpresa:', parsedEmpresa);
+                  return parsedEmpresa;
+                });
+              }, 0);
+              
               return;
             }
           } catch (error) {
             console.error('Error al analizar la empresa del localStorage:', error);
+            // Clear invalid data from localStorage
+            localStorage.removeItem(`empresa_${empresaId}`);
           }
         }
 
-        // Si no está en el localStorage, intentamos cargarla de la API
+        // 2. Try loading from API
         console.log('Buscando empresa en la API...');
         try {
           const empresaData = await getEmpresaById(empresaId);
           if (empresaData) {
             console.log('Empresa cargada desde la API:', empresaData);
-            // Guardamos en localStorage para futuras cargas
+            // Save to localStorage for future use
             localStorage.setItem(`empresa_${empresaId}`, JSON.stringify(empresaData));
-            setCurrentEmpresa(empresaData);
+            console.log('Estableciendo currentEmpresa desde API...');
+            setCurrentEmpresa(prevEmpresa => {
+              console.log('Estado anterior de currentEmpresa:', prevEmpresa);
+              return empresaData;
+            });
             return;
           }
-        } catch (error) {
-          console.error('Error al cargar la empresa desde la API:', error);
-          // Continuamos con la creación de una empresa temporal
+        } catch (apiError) {
+          console.error('Error al cargar la empresa desde la API:', apiError);
+          // Continue to create temp company
         }
 
-        // Si no se pudo cargar, creamos una empresa temporal
+        // 3. Create a temporary company as fallback
         console.log('Creando empresa temporal...');
         const empresaTemporal: Empresa = {
           id: empresaId,
@@ -109,15 +144,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           telefono: '',
           email: '',
           direccion: '',
-          owner: user.id, // Usamos el ID del usuario actual como propietario
+          owner: user?.id || 0, // Use optional chaining with fallback
           foto: ''
         };
         
-        setCurrentEmpresa(empresaTemporal);
+        // Save the temporary company to localStorage
+        localStorage.setItem(`empresa_${empresaId}`, JSON.stringify(empresaTemporal));
+        console.log('Estableciendo currentEmpresa con empresa temporal...');
+        setCurrentEmpresa(prevEmpresa => {
+          console.log('Estado anterior de currentEmpresa:', prevEmpresa);
+          return empresaTemporal;
+        });
         
       } catch (error) {
-        console.error('Error al cargar la empresa:', error);
-        // En caso de error, creamos una empresa temporal de emergencia
+        console.error('Error inesperado al cargar la empresa:', error);
+        // Create an emergency company as last resort
         const empresaEmergencia: Empresa = {
           id: empresaId,
           nombre: 'Empresa Temporal',
@@ -125,15 +166,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           telefono: '',
           email: '',
           direccion: '',
-          owner: user.id,
+          owner: user?.id || 0,
           foto: ''
         };
-        setCurrentEmpresa(empresaEmergencia);
+        // Save emergency company to localStorage
+        localStorage.setItem(`empresa_${empresaId}`, JSON.stringify(empresaEmergencia));
+        console.log('Estableciendo currentEmpresa con empresa de emergencia...');
+        setCurrentEmpresa(prevEmpresa => {
+          console.log('Estado anterior de currentEmpresa:', prevEmpresa);
+          return empresaEmergencia;
+        });
       }
     };
 
-    cargarEmpresa();
-  }, [user, empresaId, currentEmpresa]); // Incluimos currentEmpresa en las dependencias
+    // Usar setTimeout para asegurar que el efecto se ejecute después de que el estado se haya actualizado
+    const timer = setTimeout(() => {
+      if (isMounted) {
+        cargarEmpresa();
+      }
+    }, 0);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [user, empresaId]); // Eliminamos currentEmpresa de las dependencias
 
   useEffect(() => {
     if (userRole === "Owner") {
